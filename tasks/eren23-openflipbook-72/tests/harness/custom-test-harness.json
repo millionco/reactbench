@@ -1,0 +1,5 @@
+{
+  "name": "openflipbook-geometry-relocalize",
+  "vitest": "specs/relocalize-empty-state.spec.tsx",
+  "playwright": "e2e/relocalize-empty-state.spec.ts"
+}

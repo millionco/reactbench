@@ -1,0 +1,6 @@
+harness/node_modules
+harness/.pnpm-store
+harness/.vite-cache
+harness/.vite
+harness/test-results
+harness/dist

@@ -1,0 +1,696 @@
+diff --git a/package-lock.json b/package-lock.json
+index cd7f9b7d..19f254a5 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -68,6 +68,7 @@
+         "gray-matter": "^4.0.3",
+         "jose": "^6.1.3",
+         "js-yaml": "^4.1.1",
++        "katex": "^0.16.45",
+         "knex": "^3.1.0",
+         "lucide-react": "^0.552.0",
+         "lz-string": "^1.5.0",
+@@ -90,6 +91,7 @@
+         "recharts": "^2.15.4",
+         "rehype-raw": "^7.0.0",
+         "remark-gfm": "^4.0.1",
++        "remark-math": "^6.0.0",
+         "server-only": "^0.0.1",
+         "sql-formatter": "^15.4.4",
+         "tailwind-merge": "^3.3.1",
+@@ -8591,6 +8593,12 @@
+       "devOptional": true,
+       "license": "MIT"
+     },
++    "node_modules/@types/katex": {
++      "version": "0.16.8",
++      "resolved": "https://registry.npmjs.org/@types/katex/-/katex-0.16.8.tgz",
++      "integrity": "sha512-trgaNyfU+Xh2Tc+ABIb44a5AYUpicB3uwirOioeOkNPPbmgRNtcWyDeeFRzjPZENO9Vq8gvVqfhaaXWLlevVwg==",
++      "license": "MIT"
++    },
+     "node_modules/@types/linkify-it": {
+       "version": "5.0.0",
+       "resolved": "https://registry.npmjs.org/@types/linkify-it/-/linkify-it-5.0.0.tgz",
+@@ -12783,6 +12791,55 @@
+         "node": ">= 0.4"
+       }
+     },
++    "node_modules/hast-util-from-dom": {
++      "version": "5.0.1",
++      "resolved": "https://registry.npmjs.org/hast-util-from-dom/-/hast-util-from-dom-5.0.1.tgz",
++      "integrity": "sha512-N+LqofjR2zuzTjCPzyDUdSshy4Ma6li7p/c3pA78uTwzFgENbgbUrm2ugwsOdcjI1muO+o6Dgzp9p8WHtn/39Q==",
++      "license": "ISC",
++      "dependencies": {
++        "@types/hast": "^3.0.0",
++        "hastscript": "^9.0.0",
++        "web-namespaces": "^2.0.0"
++      },
++      "funding": {
++        "type": "opencollective",
++        "url": "https://opencollective.com/unified"
++      }
++    },
++    "node_modules/hast-util-from-html": {
++      "version": "2.0.3",
++      "resolved": "https://registry.npmjs.org/hast-util-from-html/-/hast-util-from-html-2.0.3.tgz",
++      "integrity": "sha512-CUSRHXyKjzHov8yKsQjGOElXy/3EKpyX56ELnkHH34vDVw1N1XSQ1ZcAvTyAPtGqLTuKP/uxM+aLkSPqF/EtMw==",
++      "license": "MIT",
++      "dependencies": {
++        "@types/hast": "^3.0.0",
++        "devlop": "^1.1.0",
++        "hast-util-from-parse5": "^8.0.0",
++        "parse5": "^7.0.0",
++        "vfile": "^6.0.0",
++        "vfile-message": "^4.0.0"
++      },
++      "funding": {
++        "type": "opencollective",
++        "url": "https://opencollective.com/unified"
++      }
++    },
++    "node_modules/hast-util-from-html-isomorphic": {
++      "version": "2.0.0",
++      "resolved": "https://registry.npmjs.org/hast-util-from-html-isomorphic/-/hast-util-from-html-isomorphic-2.0.0.tgz",
++      "integrity": "sha512-zJfpXq44yff2hmE0XmwEOzdWin5xwH+QIhMLOScpX91e/NSGPsAzNCvLQDIEPyO2TXi+lBmU6hjLIhV8MwP2kw==",
++      "license": "MIT",
++      "dependencies": {
++        "@types/hast": "^3.0.0",
++        "hast-util-from-dom": "^5.0.0",
++        "hast-util-from-html": "^2.0.0",
++        "unist-util-remove-position": "^5.0.0"
++      },
++      "funding": {
++        "type": "opencollective",
++        "url": "https://opencollective.com/unified"
++      }
++    },
+     "node_modules/hast-util-from-parse5": {
+       "version": "8.0.3",
+       "resolved": "https://registry.npmjs.org/hast-util-from-parse5/-/hast-util-from-parse5-8.0.3.tgz",
+@@ -12803,6 +12860,19 @@
+         "url": "https://opencollective.com/unified"
+       }
+     },
++    "node_modules/hast-util-is-element": {
++      "version": "3.0.0",
++      "resolved": "https://registry.npmjs.org/hast-util-is-element/-/hast-util-is-element-3.0.0.tgz",
++      "integrity": "sha512-Val9mnv2IWpLbNPqc/pUem+a7Ipj2aHacCwgNfTiK0vJKl0LF+4Ba4+v1oPHFpf3bLYmreq0/l3Gud9S5OH42g==",
++      "license": "MIT",
++      "dependencies": {
++        "@types/hast": "^3.0.0"
++      },
++      "funding": {
++        "type": "opencollective",
++        "url": "https://opencollective.com/unified"
++      }
++    },
+     "node_modules/hast-util-parse-selector": {
+       "version": "4.0.0",
+       "resolved": "https://registry.npmjs.org/hast-util-parse-selector/-/hast-util-parse-selector-4.0.0.tgz",
+@@ -12911,6 +12981,22 @@
+         "url": "https://opencollective.com/unified"
+       }
+     },
++    "node_modules/hast-util-to-text": {
++      "version": "4.0.2",
++      "resolved": "https://registry.npmjs.org/hast-util-to-text/-/hast-util-to-text-4.0.2.tgz",
++      "integrity": "sha512-KK6y/BN8lbaq654j7JgBydev7wuNMcID54lkRav1P0CaE1e47P72AWWPiGKXTJU271ooYzcvTAn/Zt0REnvc7A==",
++      "license": "MIT",
++      "dependencies": {
++        "@types/hast": "^3.0.0",
++        "@types/unist": "^3.0.0",
++        "hast-util-is-element": "^3.0.0",
++        "unist-util-find-after": "^5.0.0"
++      },
++      "funding": {
++        "type": "opencollective",
++        "url": "https://opencollective.com/unified"
++      }
++    },
+     "node_modules/hast-util-whitespace": {
+       "version": "3.0.0",
+       "resolved": "https://registry.npmjs.org/hast-util-whitespace/-/hast-util-whitespace-3.0.0.tgz",
+@@ -13603,9 +13689,9 @@
+       }
+     },
+     "node_modules/katex": {
+-      "version": "0.16.33",
+-      "resolved": "https://registry.npmjs.org/katex/-/katex-0.16.33.tgz",
+-      "integrity": "sha512-q3N5u+1sY9Bu7T4nlXoiRBXWfwSefNGoKeOwekV+gw0cAXQlz2Ww6BLcmBxVDeXBMUDQv6fK5bcNaJLxob3ZQA==",
++      "version": "0.16.45",
++      "resolved": "https://registry.npmjs.org/katex/-/katex-0.16.45.tgz",
++      "integrity": "sha512-pQpZbdBu7wCTmQUh7ufPmLr0pFoObnGUoL/yhtwJDgmmQpbkg/0HSVti25Fu4rmd1oCR6NGWe9vqTWuWv3GcNA==",
+       "funding": [
+         "https://opencollective.com/katex",
+         "https://github.com/sponsors/katex"
+@@ -14183,6 +14269,25 @@
+         "url": "https://opencollective.com/unified"
+       }
+     },
++    "node_modules/mdast-util-math": {
++      "version": "3.0.0",
++      "resolved": "https://registry.npmjs.org/mdast-util-math/-/mdast-util-math-3.0.0.tgz",
++      "integrity": "sha512-Tl9GBNeG/AhJnQM221bJR2HPvLOSnLE/T9cJI9tlc6zwQk2nPk/4f0cHkOdEixQPC/j8UtKDdITswvLAy1OZ1w==",
++      "license": "MIT",
++      "dependencies": {
++        "@types/hast": "^3.0.0",
++        "@types/mdast": "^4.0.0",
++        "devlop": "^1.0.0",
++        "longest-streak": "^3.0.0",
++        "mdast-util-from-markdown": "^2.0.0",
++        "mdast-util-to-markdown": "^2.1.0",
++        "unist-util-remove-position": "^5.0.0"
++      },
++      "funding": {
++        "type": "opencollective",
++        "url": "https://opencollective.com/unified"
++      }
++    },
+     "node_modules/mdast-util-mdx-expression": {
+       "version": "2.0.1",
+       "resolved": "https://registry.npmjs.org/mdast-util-mdx-expression/-/mdast-util-mdx-expression-2.0.1.tgz",
+@@ -14591,6 +14696,25 @@
+         "url": "https://opencollective.com/unified"
+       }
+     },
++    "node_modules/micromark-extension-math": {
++      "version": "3.1.0",
++      "resolved": "https://registry.npmjs.org/micromark-extension-math/-/micromark-extension-math-3.1.0.tgz",
++      "integrity": "sha512-lvEqd+fHjATVs+2v/8kg9i5Q0AP2k85H0WUOwpIVvUML8BapsMvh1XAogmQjOCsLpoKRCVQqEkQBB3NhVBcsOg==",
++      "license": "MIT",
++      "dependencies": {
++        "@types/katex": "^0.16.0",
++        "devlop": "^1.0.0",
++        "katex": "^0.16.0",
++        "micromark-factory-space": "^2.0.0",
++        "micromark-util-character": "^2.0.0",
++        "micromark-util-symbol": "^2.0.0",
++        "micromark-util-types": "^2.0.0"
++      },
++      "funding": {
++        "type": "opencollective",
++        "url": "https://opencollective.com/unified"
++      }
++    },
+     "node_modules/micromark-factory-destination": {
+       "version": "2.0.1",
+       "resolved": "https://registry.npmjs.org/micromark-factory-destination/-/micromark-factory-destination-2.0.1.tgz",
+@@ -17016,6 +17140,22 @@
+         "url": "https://opencollective.com/unified"
+       }
+     },
++    "node_modules/remark-math": {
++      "version": "6.0.0",
++      "resolved": "https://registry.npmjs.org/remark-math/-/remark-math-6.0.0.tgz",
++      "integrity": "sha512-MMqgnP74Igy+S3WwnhQ7kqGlEerTETXMvJhrUzDikVZ2/uogJCb+WHUg97hK9/jcfc0dkD73s3LN8zU49cTEtA==",
++      "license": "MIT",
++      "dependencies": {
++        "@types/mdast": "^4.0.0",
++        "mdast-util-math": "^3.0.0",
++        "micromark-extension-math": "^3.0.0",
++        "unified": "^11.0.0"
++      },
++      "funding": {
++        "type": "opencollective",
++        "url": "https://opencollective.com/unified"
++      }
++    },
+     "node_modules/remark-parse": {
+       "version": "11.0.0",
+       "resolved": "https://registry.npmjs.org/remark-parse/-/remark-parse-11.0.0.tgz",
+@@ -18850,6 +18990,20 @@
+         "url": "https://opencollective.com/unified"
+       }
+     },
++    "node_modules/unist-util-find-after": {
++      "version": "5.0.0",
++      "resolved": "https://registry.npmjs.org/unist-util-find-after/-/unist-util-find-after-5.0.0.tgz",
++      "integrity": "sha512-amQa0Ep2m6hE2g72AugUItjbuM8X8cGQnFoHk0pGfrFeT9GZhzN5SW8nRsiGKK7Aif4CrACPENkA6P/Lw6fHGQ==",
++      "license": "MIT",
++      "dependencies": {
++        "@types/unist": "^3.0.0",
++        "unist-util-is": "^6.0.0"
++      },
++      "funding": {
++        "type": "opencollective",
++        "url": "https://opencollective.com/unified"
++      }
++    },
+     "node_modules/unist-util-is": {
+       "version": "6.0.1",
+       "resolved": "https://registry.npmjs.org/unist-util-is/-/unist-util-is-6.0.1.tgz",
+@@ -18876,6 +19030,20 @@
+         "url": "https://opencollective.com/unified"
+       }
+     },
++    "node_modules/unist-util-remove-position": {
++      "version": "5.0.0",
++      "resolved": "https://registry.npmjs.org/unist-util-remove-position/-/unist-util-remove-position-5.0.0.tgz",
++      "integrity": "sha512-Hp5Kh3wLxv0PHj9m2yZhhLt58KzPtEYKQQ4yxfYFEO7EvHwzyDYnduhHnY1mDxoqr7VUwVuHXk9RXKIiYS1N8Q==",
++      "license": "MIT",
++      "dependencies": {
++        "@types/unist": "^3.0.0",
++        "unist-util-visit": "^5.0.0"
++      },
++      "funding": {
++        "type": "opencollective",
++        "url": "https://opencollective.com/unified"
++      }
++    },
+     "node_modules/unist-util-stringify-position": {
+       "version": "4.0.0",
+       "resolved": "https://registry.npmjs.org/unist-util-stringify-position/-/unist-util-stringify-position-4.0.0.tgz",
+diff --git a/package.json b/package.json
+index 2deb0fb..f1deeba 100644
+--- a/package.json
++++ b/package.json
+@@ -97,6 +97,7 @@
+     "gray-matter": "^4.0.3",
+     "jose": "^6.1.3",
+     "js-yaml": "^4.1.1",
++    "katex": "^0.16.45",
+     "knex": "^3.1.0",
+     "lucide-react": "^0.552.0",
+     "lz-string": "^1.5.0",
+@@ -119,6 +120,7 @@
+     "recharts": "^2.15.4",
+     "rehype-raw": "^7.0.0",
+     "remark-gfm": "^4.0.1",
++    "remark-math": "^6.0.0",
+     "server-only": "^0.0.1",
+     "sql-formatter": "^15.4.4",
+     "tailwind-merge": "^3.3.1",
+diff --git a/src/app/layout.tsx b/src/app/layout.tsx
+index 8deb811..c50a9e5 100644
+--- a/src/app/layout.tsx
++++ b/src/app/layout.tsx
+@@ -1,6 +1,7 @@
+ import { getSession } from "@/auth";
+ import { RuntimeConfigProvider } from "@/components/runtime-config-provider";
+ import "@/index.css";
++import "katex/dist/katex.min.css";
+ import { LanguageModelProviderFactory } from "@/lib/ai/llm/llm-provider-factory";
+ import { getSessionRepositoryType } from "@/lib/ai/session/server-session-repository-factory";
+ import { SkillPermissionManager } from "@/lib/ai/skills/skill-permission-manager";
+diff --git a/src/components/chat/message/message-markdown-constants.ts b/src/components/chat/message/message-markdown-constants.ts
+new file mode 100644
+index 0000000..3bda270
+--- /dev/null
++++ b/src/components/chat/message/message-markdown-constants.ts
+@@ -0,0 +1 @@
++export const MINIMUM_CODE_FENCE_LENGTH = 3;
+diff --git a/src/components/chat/message/message-markdown-math.ts b/src/components/chat/message/message-markdown-math.ts
+index 49d1269..d0bf865 100644
+--- a/src/components/chat/message/message-markdown-math.ts
++++ b/src/components/chat/message/message-markdown-math.ts
+@@ -1,4 +1,262 @@
+-export const normalizeMathMarkdown = (text: string) =>
+-  text
+-    .replace(/\\\(([\s\S]*?)\\\)/g, "$$$1$")
+-    .replace(/\\\[([\s\S]*?)\\\]/g, "\n\n$$$$\n$1\n$$$$\n\n");
++import { MINIMUM_CODE_FENCE_LENGTH } from "./message-markdown-constants";
++
++interface CodeFence {
++  character: "`" | "~";
++  length: number;
++}
++
++interface DisplayMathBlock {
++  contentLines: string[];
++  endIndex: number;
++  indentation: string;
++}
++
++const countRepeatedCharacter = (
++  source: string,
++  startIndex: number,
++  character: string,
++) => {
++  let endIndex = startIndex;
++  while (source[endIndex] === character) {
++    endIndex += 1;
++  }
++  return endIndex - startIndex;
++};
++
++const getLineEnd = (source: string, startIndex: number) => {
++  const newlineIndex = source.indexOf("\n", startIndex);
++  return newlineIndex === -1 ? source.length : newlineIndex;
++};
++
++const getOpeningFence = (line: string): CodeFence | null => {
++  const indentationLength = line.match(/^[ \t]*/)?.[0].length ?? 0;
++  if (indentationLength > MINIMUM_CODE_FENCE_LENGTH) {
++    return null;
++  }
++
++  const character = line[indentationLength];
++  if (character !== "`" && character !== "~") {
++    return null;
++  }
++
++  const length = countRepeatedCharacter(line, indentationLength, character);
++  if (length < MINIMUM_CODE_FENCE_LENGTH) {
++    return null;
++  }
++
++  return { character, length };
++};
++
++const isClosingFence = (line: string, fence: CodeFence) => {
++  const indentationLength = line.match(/^[ \t]*/)?.[0].length ?? 0;
++  if (indentationLength > MINIMUM_CODE_FENCE_LENGTH) {
++    return false;
++  }
++
++  const markerLength = countRepeatedCharacter(
++    line,
++    indentationLength,
++    fence.character,
++  );
++  return (
++    markerLength >= fence.length &&
++    line.slice(indentationLength + markerLength).trim() === ""
++  );
++};
++
++const findFenceEnd = (source: string, startIndex: number) => {
++  const openingLineEnd = getLineEnd(source, startIndex);
++  const openingFence = getOpeningFence(source.slice(startIndex, openingLineEnd));
++  if (!openingFence) {
++    return null;
++  }
++
++  let lineStartIndex =
++    openingLineEnd < source.length ? openingLineEnd + 1 : source.length;
++  while (lineStartIndex < source.length) {
++    const lineEndIndex = getLineEnd(source, lineStartIndex);
++    if (
++      isClosingFence(
++        source.slice(lineStartIndex, lineEndIndex),
++        openingFence,
++      )
++    ) {
++      return lineEndIndex < source.length ? lineEndIndex + 1 : lineEndIndex;
++    }
++    lineStartIndex =
++      lineEndIndex < source.length ? lineEndIndex + 1 : source.length;
++  }
++
++  return source.length;
++};
++
++const findInlineCodeEnd = (
++  source: string,
++  startIndex: number,
++  delimiterLength: number,
++) => {
++  let candidateIndex = source.indexOf("`", startIndex);
++  while (candidateIndex !== -1) {
++    const candidateLength = countRepeatedCharacter(
++      source,
++      candidateIndex,
++      "`",
++    );
++    if (candidateLength === delimiterLength) {
++      return candidateIndex + candidateLength;
++    }
++    candidateIndex = source.indexOf("`", candidateIndex + candidateLength);
++  }
++  return null;
++};
++
++const stripIndentation = (line: string, indentation: string) =>
++  line.startsWith(indentation) ? line.slice(indentation.length) : line;
++
++const getDisplayMathBlock = (
++  source: string,
++  startIndex: number,
++): DisplayMathBlock | null => {
++  const openingLineEnd = getLineEnd(source, startIndex);
++  const openingLine = source.slice(startIndex, openingLineEnd);
++  const openingMatch = openingLine.match(/^([ \t]*)\\\[(.*)$/);
++  if (!openingMatch) {
++    return null;
++  }
++
++  const indentation = openingMatch[1] ?? "";
++  const openingRemainder = openingMatch[2] ?? "";
++  const sameLineClosingIndex = openingRemainder.indexOf("\\]");
++  if (sameLineClosingIndex !== -1) {
++    if (openingRemainder.slice(sameLineClosingIndex + 2).trim() !== "") {
++      return null;
++    }
++    return {
++      contentLines: [
++        openingRemainder.slice(0, sameLineClosingIndex).trim(),
++      ],
++      endIndex:
++        openingLineEnd < source.length ? openingLineEnd + 1 : openingLineEnd,
++      indentation,
++    };
++  }
++  if (openingRemainder.trim() !== "") {
++    return null;
++  }
++
++  const contentLines: string[] = [];
++  let lineStartIndex =
++    openingLineEnd < source.length ? openingLineEnd + 1 : source.length;
++  while (lineStartIndex < source.length) {
++    const lineEndIndex = getLineEnd(source, lineStartIndex);
++    const line = source.slice(lineStartIndex, lineEndIndex);
++    if (/^[ \t]*\\\][ \t]*$/.test(line)) {
++      return {
++        contentLines,
++        endIndex: lineEndIndex < source.length ? lineEndIndex + 1 : lineEndIndex,
++        indentation,
++      };
++    }
++    contentLines.push(stripIndentation(line, indentation));
++    lineStartIndex =
++      lineEndIndex < source.length ? lineEndIndex + 1 : source.length;
++  }
++
++  return null;
++};
++
++const trimBlankContentLines = (contentLines: string[]) => {
++  let startIndex = 0;
++  let endIndex = contentLines.length;
++  while (startIndex < endIndex && contentLines[startIndex]?.trim() === "") {
++    startIndex += 1;
++  }
++  while (endIndex > startIndex && contentLines[endIndex - 1]?.trim() === "") {
++    endIndex -= 1;
++  }
++  return contentLines.slice(startIndex, endIndex);
++};
++
++const ensureTrailingBlankLine = (source: string) => {
++  if (source.length === 0 || source.endsWith("\n\n")) {
++    return source;
++  }
++  return source.endsWith("\n") ? `${source}\n` : `${source}\n\n`;
++};
++
++const formatDisplayMath = (block: DisplayMathBlock) => {
++  const content = trimBlankContentLines(block.contentLines)
++    .map((line) => `${block.indentation}${line.trimEnd()}`)
++    .join("\n");
++  return `${block.indentation}$$\n${content}\n${block.indentation}$$`;
++};
++
++export const normalizeMathMarkdown = (text: string) => {
++  let normalizedText = "";
++  let currentIndex = 0;
++  let isLineStart = true;
++
++  while (currentIndex < text.length) {
++    if (isLineStart) {
++      const fenceEndIndex = findFenceEnd(text, currentIndex);
++      if (fenceEndIndex !== null) {
++        normalizedText += text.slice(currentIndex, fenceEndIndex);
++        currentIndex = fenceEndIndex;
++        isLineStart = true;
++        continue;
++      }
++
++      const displayMathBlock = getDisplayMathBlock(text, currentIndex);
++      if (displayMathBlock) {
++        normalizedText = ensureTrailingBlankLine(normalizedText);
++        normalizedText += formatDisplayMath(displayMathBlock);
++        currentIndex = displayMathBlock.endIndex;
++        if (currentIndex < text.length) {
++          normalizedText += "\n\n";
++        }
++        isLineStart = true;
++        continue;
++      }
++    }
++
++    if (text[currentIndex] === "`") {
++      const delimiterLength = countRepeatedCharacter(
++        text,
++        currentIndex,
++        "`",
++      );
++      const inlineCodeEndIndex = findInlineCodeEnd(
++        text,
++        currentIndex + delimiterLength,
++        delimiterLength,
++      );
++      if (inlineCodeEndIndex !== null) {
++        const inlineCode = text.slice(currentIndex, inlineCodeEndIndex);
++        normalizedText += inlineCode;
++        isLineStart = inlineCode.endsWith("\n");
++        currentIndex = inlineCodeEndIndex;
++        continue;
++      }
++    }
++
++    if (text.startsWith("\\(", currentIndex)) {
++      const closingIndex = text.indexOf("\\)", currentIndex + 2);
++      if (closingIndex !== -1) {
++        const content = text.slice(currentIndex + 2, closingIndex);
++        if (!content.includes("\n")) {
++          normalizedText += `$${content.trim()}$`;
++          currentIndex = closingIndex + 2;
++          isLineStart = false;
++          continue;
++        }
++      }
++    }
++
++    const character = text[currentIndex] ?? "";
++    normalizedText += character;
++    currentIndex += 1;
++    isLineStart = character === "\n";
++  }
++
++  return normalizedText;
++};
+diff --git a/src/components/chat/message/message-markdown.tsx b/src/components/chat/message/message-markdown.tsx
+index e95bc53..5f827a1 100644
+--- a/src/components/chat/message/message-markdown.tsx
++++ b/src/components/chat/message/message-markdown.tsx
+@@ -7,9 +7,11 @@ import { OpenTableTabButton } from "@/components/table-tab/open-table-tab-button
+ import { Button } from "@/components/ui/button";
+ import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+ import { cn } from "@/lib/utils";
+-import { memo, useEffect, useMemo, useRef } from "react";
++import katex from "katex";
++import { Children, isValidElement, memo, useEffect, useMemo, useRef } from "react";
+ import ReactMarkdown, { defaultUrlTransform, type Components } from "react-markdown";
+ import remarkGfm from "remark-gfm";
++import remarkMath from "remark-math";
+ import { FileLink } from "./file-link";
+ import { MessageMarkdownChartSpec } from "./message-markdown-chat";
+ import { normalizeMathMarkdown } from "./message-markdown-math";
+@@ -17,6 +19,41 @@ import { MessageMarkdownSql } from "./message-markdown-sql";
+ import { MessageMarkdownVizlayer } from "./message-markdown-vizlayer";
+ import { remarkExtensions } from "./remark-extensions";
+ 
++interface KatexMathProps {
++  displayMode: boolean;
++  math: string;
++}
++
++interface MathElementProps {
++  displayMode?: boolean;
++}
++
++const normalizeKatexInput = (math: string) =>
++  math.replace(/\\text\{([^{}]*)\}/g, (_, textContent: string) => {
++    const escapedText = textContent.replaceAll("_", "\\_");
++    return `\\text{${escapedText}}`;
++  });
++
++const KatexMath = ({ displayMode, math }: KatexMathProps) => {
++  const containerRef = useRef<HTMLSpanElement>(null);
++
++  useEffect(() => {
++    const container = containerRef.current;
++    if (!container) {
++      return;
++    }
++
++    katex.render(normalizeKatexInput(math), container, {
++      displayMode,
++      output: "htmlAndMathml",
++      strict: "ignore",
++      throwOnError: false,
++    });
++  }, [displayMode, math]);
++
++  return <span data-math-display={displayMode ? "true" : undefined} ref={containerRef} />;
++};
++
+ function transformMarkdownUrl(url: string) {
+   if (url.startsWith("skill://")) {
+     return url;
+@@ -81,6 +118,15 @@ export const MessageMarkdown = memo(function MessageMarkdown({
+   const components = useMemo<Components>(
+     () => ({
+       code: ({ className: codeClassName, children, ...props }: React.ComponentProps<"code">) => {
++        if (codeClassName?.includes("language-math")) {
++          return (
++            <KatexMath
++              displayMode={codeClassName.includes("math-display")}
++              math={String(children).replace(/\n$/, "")}
++            />
++          );
++        }
++
+         if (codeClassName === "language-sql" || codeClassName === "language-clickhouse") {
+           return (
+             <MessageMarkdownSql
+@@ -184,6 +230,14 @@ export const MessageMarkdown = memo(function MessageMarkdown({
+           </code>
+         );
+       },
++      pre: ({ children, ...props }: React.HTMLAttributes<HTMLPreElement>) => {
++        const child = Children.count(children) === 1 ? Children.only(children) : null;
++        if (isValidElement<MathElementProps>(child) && child.props.displayMode) {
++          return <>{child}</>;
++        }
++
++        return <pre {...props}>{children}</pre>;
++      },
+       a: ({ href, children, ...props }: React.AnchorHTMLAttributes<HTMLAnchorElement>) => {
+         if (href?.startsWith("skill://")) {
+           const skillId = href.replace("skill://", "");
+@@ -345,7 +399,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
+   return (
+     <div className="prose prose-sm dark:prose-invert max-w-none text-sm relative">
+       <ReactMarkdown
+-        remarkPlugins={[remarkGfm, remarkExtensions]}
++        remarkPlugins={[remarkGfm, remarkMath, remarkExtensions]}
+         components={components}
+         urlTransform={transformMarkdownUrl}
+       >
+diff --git a/src/index.css b/src/index.css
+index 4e81a84..0acd656 100644
+--- a/src/index.css
++++ b/src/index.css
+@@ -182,6 +182,20 @@
+   }
+ }
+ 
++@layer components {
++  .prose .katex-display {
++    text-align: left;
++    margin: 0.5rem 0;
++    overflow-x: auto;
++    overflow-y: hidden;
++    padding-bottom: 0.125rem;
++  }
++
++  .prose .katex {
++    color: inherit;
++  }
++}
++
+ @layer base {
+   * {
+     @apply border-border;

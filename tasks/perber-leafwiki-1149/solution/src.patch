@@ -1,0 +1,252 @@
+diff --git a/ui/leafwiki-ui/src/components/UserToolbar.tsx b/ui/leafwiki-ui/src/components/UserToolbar.tsx
+index 04e5b7dc..2d3b678c 100644
+--- a/ui/leafwiki-ui/src/components/UserToolbar.tsx
++++ b/ui/leafwiki-ui/src/components/UserToolbar.tsx
+@@ -5,6 +5,7 @@ import {
+   DropdownMenuItem,
+   DropdownMenuLabel,
+   DropdownMenuSeparator,
++  DropdownMenuShortcut,
+   DropdownMenuTrigger,
+ } from '@/components/ui/dropdown-menu'
+ import i18next from '@/lib/i18n'
+@@ -12,14 +13,28 @@ import {
+   DIALOG_CHANGE_OWN_PASSWORD,
+   DIALOG_SHORTCUTS_HELP,
+ } from '@/lib/registries'
++import {
++  createHotkeyDefinition,
++  getShortcutDisplayLabel,
++} from '@/lib/shortcuts/shortcutCatalog'
+ import { useBackupStore } from '@/stores/backup'
+ import { useConfigStore } from '@/stores/config'
+ import { useDialogsStore } from '@/stores/dialogs'
++import { useHotKeysStore } from '@/stores/hotkeys'
+ import { useSessionStore } from '@/stores/session'
+ import { Heart } from 'lucide-react'
++import { useEffect } from 'react'
+ import { useNavigate } from 'react-router-dom'
+ import { RoleGuard } from './RoleGuard'
+ 
++const isMacOS =
++  typeof navigator !== 'undefined' &&
++  /Mac|iPhone|iPad|iPod/.test(navigator.platform)
++const shortcutsDialogHotkeyLabel = getShortcutDisplayLabel(
++  'shortcuts.help.open',
++  isMacOS,
++)
++
+ export default function UserToolbar() {
+   const supportPageUrl = 'https://leafwiki.com/support/'
+   const user = useSessionStore((s) => s.user)
+@@ -29,10 +44,25 @@ export default function UserToolbar() {
+   const authDisabled = useConfigStore((s) => s.authDisabled)
+   const backupEnabled = useBackupStore((s) => s.enabled)
+   const httpRemoteUserEnabled = useConfigStore((s) => s.httpRemoteUserEnabled)
++  const registerHotkey = useHotKeysStore((state) => state.registerHotkey)
++  const unregisterHotkey = useHotKeysStore((state) => state.unregisterHotkey)
+   const httpRemoteUserLogoutUrl = useConfigStore(
+     (s) => s.httpRemoteUserLogoutUrl,
+   )
+ 
++  useEffect(() => {
++    if (!user || authDisabled) {
++      return
++    }
++
++    const hotkey = createHotkeyDefinition('shortcuts.help.open', () =>
++      openDialog(DIALOG_SHORTCUTS_HELP),
++    )
++
++    registerHotkey(hotkey)
++    return () => unregisterHotkey(hotkey.keyCombo)
++  }, [authDisabled, openDialog, registerHotkey, unregisterHotkey, user])
++
+   if (!user && !authDisabled) {
+     // renders the login
+     return (
+@@ -118,6 +148,9 @@ export default function UserToolbar() {
+             onClick={() => openDialog(DIALOG_SHORTCUTS_HELP)}
+           >
+             {i18next.t('shortcutsHelp.menuItem', { ns: 'viewer' })}
++            <DropdownMenuShortcut>
++              {shortcutsDialogHotkeyLabel}
++            </DropdownMenuShortcut>
+           </DropdownMenuItem>
+           <DropdownMenuItem
+             className="cursor-pointer"
+diff --git a/ui/leafwiki-ui/src/features/shortcuts/ShortcutsDialog.tsx b/ui/leafwiki-ui/src/features/shortcuts/ShortcutsDialog.tsx
+index bf158fef..4a2e7284 100644
+--- a/ui/leafwiki-ui/src/features/shortcuts/ShortcutsDialog.tsx
++++ b/ui/leafwiki-ui/src/features/shortcuts/ShortcutsDialog.tsx
+@@ -2,7 +2,7 @@ import BaseDialog from '@/components/BaseDialog'
+ import i18next from '@/lib/i18n'
+ import {
+   getShortcutDisplayLabel,
+-  getVisibleShortcutsForMode,
++  getVisibleShortcutsForModes,
+ } from '@/lib/shortcuts/shortcutCatalog'
+ import { useAppMode } from '@/lib/useAppMode'
+ import { DIALOG_SHORTCUTS_HELP } from '@/lib/registries'
+@@ -13,7 +13,7 @@ const isMacOS =
+ 
+ export function ShortcutsDialog() {
+   const appMode = useAppMode()
+-  const shortcuts = getVisibleShortcutsForMode(appMode)
++  const shortcuts = getVisibleShortcutsForModes([appMode, 'dialog'])
+ 
+   return (
+     <BaseDialog
+@@ -39,6 +39,9 @@ export function ShortcutsDialog() {
+             mode: i18next.t(`shortcutsHelp.modes.${appMode}`, { ns: 'viewer' }),
+           })}
+         </p>
++        <p className="text-muted-foreground text-sm">
++          {i18next.t('shortcutsHelp.dialogHint', { ns: 'viewer' })}
++        </p>
+         <div className="rounded-md border">
+           <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-3 p-4">
+             {shortcuts.map((shortcut) => (
+diff --git a/ui/leafwiki-ui/src/lib/hotkeys.ts b/ui/leafwiki-ui/src/lib/hotkeys.ts
+index b51790c1..efbd020d 100644
+--- a/ui/leafwiki-ui/src/lib/hotkeys.ts
++++ b/ui/leafwiki-ui/src/lib/hotkeys.ts
+@@ -32,6 +32,10 @@ function normalizeEventCode(code: string) {
+     return 'Backquote'
+   }
+ 
++  if (code === 'Slash') {
++    return 'Slash'
++  }
++
+   if (/^Key[A-Za-z]$/.test(code)) {
+     return `Key${code.slice(3).toUpperCase()}`
+   }
+diff --git a/ui/leafwiki-ui/src/lib/shortcuts/shortcutCatalog.ts b/ui/leafwiki-ui/src/lib/shortcuts/shortcutCatalog.ts
+index cdacb1f4..9d8a7524 100644
+--- a/ui/leafwiki-ui/src/lib/shortcuts/shortcutCatalog.ts
++++ b/ui/leafwiki-ui/src/lib/shortcuts/shortcutCatalog.ts
+@@ -5,6 +5,7 @@ import { HotKeyDefinition } from '@/stores/hotkeys'
+ export type ShortcutId =
+   | 'dialog.close'
+   | 'dialog.confirm'
++  | 'shortcuts.help.open'
+   | 'page.quickSwitcher.open'
+   | 'sidebar.explorer.open'
+   | 'sidebar.search.open'
+@@ -36,6 +37,7 @@ export type ShortcutDefinition = {
+   macDisplayLabel?: string
+   modes: AppMode[]
+   customizable: boolean
++  showInShortcutsDialog?: boolean
+ }
+ 
+ export const shortcutDefinitions: ShortcutDefinition[] = [
+@@ -57,6 +59,16 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
+     modes: ['dialog'],
+     customizable: false,
+   },
++  {
++    id: 'shortcuts.help.open',
++    labelKey: 'shortcutsHelp.items.openShortcutsHelp.action',
++    categoryKey: 'shortcutsHelp.categories.navigation',
++    keyCombo: 'Mod+Slash',
++    defaultDisplayLabel: 'Ctrl+/',
++    macDisplayLabel: 'Cmd+/',
++    modes: ['view', 'edit', 'history', 'settings', 'user-management'],
++    customizable: true,
++  },
+   {
+     id: 'page.quickSwitcher.open',
+     labelKey: 'shortcutsHelp.items.goToPage.action',
+@@ -253,6 +265,7 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
+     defaultDisplayLabel: 'Enter',
+     modes: ['dialog'],
+     customizable: false,
++    showInShortcutsDialog: false,
+   },
+   {
+     id: 'asset.rename.cancel',
+@@ -262,6 +275,7 @@ export const shortcutDefinitions: ShortcutDefinition[] = [
+     defaultDisplayLabel: 'Esc',
+     modes: ['dialog'],
+     customizable: false,
++    showInShortcutsDialog: false,
+   },
+ ]
+ 
+@@ -283,7 +297,11 @@ export function getVisibleShortcutsForMode(
+   mode: AppMode,
+ ): ShortcutDefinition[] {
+   return shortcutDefinitions
+-    .filter((definition) => definition.modes.includes(mode))
++    .filter(
++      (definition) =>
++        definition.modes.includes(mode) &&
++        definition.showInShortcutsDialog !== false,
++    )
+     .sort((left, right) => {
+       if (left.modes.length !== right.modes.length) {
+         return left.modes.length - right.modes.length
+@@ -293,6 +311,26 @@ export function getVisibleShortcutsForMode(
+     })
+ }
+ 
++export function getVisibleShortcutsForModes(
++  modes: AppMode[],
++): ShortcutDefinition[] {
++  const definitionsById = new Map<ShortcutId, ShortcutDefinition>()
++
++  Array.from(new Set(modes)).forEach((mode) => {
++    getVisibleShortcutsForMode(mode).forEach((definition) => {
++      definitionsById.set(definition.id, definition)
++    })
++  })
++
++  return Array.from(definitionsById.values()).sort((left, right) => {
++    if (left.modes.length !== right.modes.length) {
++      return left.modes.length - right.modes.length
++    }
++
++    return left.labelKey.localeCompare(right.labelKey)
++  })
++}
++
+ export function getShortcutDisplayLabel(id: ShortcutId, isMacOS: boolean) {
+   const definition = getShortcutDefinition(id)
+   return isMacOS && definition.macDisplayLabel
+diff --git a/ui/leafwiki-ui/src/locales/en/viewer.json b/ui/leafwiki-ui/src/locales/en/viewer.json
+index dc922ec2..a652aad6 100644
+--- a/ui/leafwiki-ui/src/locales/en/viewer.json
++++ b/ui/leafwiki-ui/src/locales/en/viewer.json
+@@ -25,8 +25,9 @@
+   "shortcutsHelp": {
+     "menuItem": "Keyboard Shortcuts",
+     "title": "Available keyboard shortcuts",
+-    "description": "A quick overview of the shortcuts that are currently available in LeafWiki.",
+-    "currentMode": "Available in {{mode}} mode",
++    "description": "A quick overview of shortcuts for the current page mode.",
++    "currentMode": "Current page mode: {{mode}}",
++    "dialogHint": "Dialog shortcuts are also included while this dialog is open.",
+     "closeButton": "Close",
+     "categories": {
+       "navigation": "Navigation",
+@@ -46,6 +47,9 @@
+       "goToPage": {
+         "action": "Go to page"
+       },
++      "openShortcutsHelp": {
++        "action": "Open keyboard shortcuts"
++      },
+       "editPage": {
+         "action": "Edit page"
+       },
+@@ -104,7 +108,7 @@
+         "action": "Close dialog"
+       },
+       "confirmDialog": {
+-        "action": "Confirm dialog"
++        "action": "Dialog default action"
+       },
+       "confirmRename": {
+         "action": "Confirm rename"

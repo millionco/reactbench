@@ -1,0 +1,91 @@
+diff --git a/src/components/form-elements/radio/RadioGroup.tsx b/src/components/form-elements/radio/RadioGroup.tsx
+index d048add9..36de2b91 100644
+--- a/src/components/form-elements/radio/RadioGroup.tsx
++++ b/src/components/form-elements/radio/RadioGroup.tsx
+@@ -117,6 +117,7 @@ const RadioGroup = ({
+ }: RadioGroupPropsType) => {
+   const {current: initialValue} = React.useRef(value);
+   const [selectedValue, setSelectedValue] = React.useState(value || null);
++  const [previousValue, setPreviousValue] = React.useState(value);
+   const [lastFocusedValue, setLastFocusedValue] = React.useState<
+     string | null | undefined
+   >(null);
+@@ -128,19 +129,47 @@ const RadioGroup = ({
+   const [isPristine, setIsPristine] = React.useState(true);
+ 
+   // If value passed to RadioGroup changes, update the selectedValue
+-  React.useEffect(() => {
++  if (value !== previousValue) {
++    setPreviousValue(value);
+     setSelectedValue(value ?? null);
+-  }, [value]);
++  }
+   // If selectedValue changes set isPristine to false
+-  React.useEffect(() => {
+-    if (selectedValue !== initialValue && isPristine) setIsPristine(false);
+-  }, [selectedValue, initialValue, isPristine]);
++  if (selectedValue !== initialValue && isPristine) {
++    setIsPristine(false);
++  }
++
++  const updateValue = React.useCallback(
++    // @ts-ignore TS7006
++    (event, nextValue) => {
++      setSelectedValue(nextValue);
++      if (onChange) onChange(event);
++    },
++    [onChange]
++  );
+ 
+-  // @ts-ignore TS7006
+-  const updateValue = (event, value) => {
+-    setSelectedValue(value);
+-    if (onChange) onChange(event);
+-  };
++  const contextValue = React.useMemo(
++    () => ({
++      color,
++      name,
++      disabled,
++      invalid,
++      selectedValue,
++      setSelectedValue: updateValue,
++      lastFocusedValue,
++      setLastFocusedValue,
++      isPristine,
++    }),
++    [
++      color,
++      name,
++      disabled,
++      invalid,
++      selectedValue,
++      updateValue,
++      lastFocusedValue,
++      isPristine,
++    ]
++  );
+ 
+   const describedbyIds = React.useMemo(() => {
+     const ids: Array<string | undefined> = [];
+@@ -169,19 +198,7 @@ const RadioGroup = ({
+       aria-describedby={describedbyIds.length ? describedbyIds : undefined}
+     >
+       <div className={radioGroupItemsClass}>
+-        <RadioContext.Provider
+-          value={{
+-            color,
+-            name,
+-            disabled,
+-            invalid,
+-            selectedValue,
+-            setSelectedValue: updateValue,
+-            lastFocusedValue,
+-            setLastFocusedValue,
+-            isPristine,
+-          }}
+-        >
++        <RadioContext.Provider value={contextValue}>
+           {children}
+         </RadioContext.Provider>
+       </div>

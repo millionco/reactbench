@@ -1,0 +1,57 @@
+--- a/packages/victory-core/src/victory-animation/victory-animation.tsx
++++ b/packages/victory-core/src/victory-animation/victory-animation.tsx
+@@ -128,10 +128,12 @@
+   const onDataChangeRef = React.useRef<() => void>(() => {});
+   const startRef = React.useRef<() => void>(() => {});
+   const didProcessInitialData = React.useRef(false);
++  const runGeneration = React.useRef(0);
+
+   traverseQueueRef.current = () => {
+     const { delay: currentDelay, duration: currentDuration } =
+       latestRef.current;
++    const activeGeneration = runGeneration.current;
+     if (queue.current.length) {
+       const nextData = queue.current[0];
+
+@@ -144,14 +146,23 @@
+       // Reset step to zero
+       if (currentDelay) {
+         setTimeout(() => {
++          if (activeGeneration !== runGeneration.current) return;
+           loopID.current = timer.subscribe(
+-            (elapsed) => runFrameRef.current(elapsed),
++            (elapsed) => {
++              if (activeGeneration === runGeneration.current) {
++                runFrameRef.current(elapsed);
++              }
++            },
+             currentDuration,
+           );
+         }, currentDelay);
+       } else {
+         loopID.current = timer.subscribe(
+-          (elapsed) => runFrameRef.current(elapsed),
++          (elapsed) => {
++            if (activeGeneration === runGeneration.current) {
++              runFrameRef.current(elapsed);
++            }
++          },
+           currentDuration,
+         );
+       }
+@@ -200,6 +211,7 @@
+
+   onDataChangeRef.current = () => {
+     const { data: currentData } = latestRef.current;
++    runGeneration.current += 1;
+     timer.unsubscribe(loopID.current);
+     queue.current = Array.isArray(currentData) ? currentData : [currentData];
+     traverseQueueRef.current();
+@@ -217,6 +229,7 @@
+   // value snapshotted at effect-setup time. `timer` comes from context and is a
+   // single shared instance, so capturing it once on mount is safe.
+   const teardown = () => {
++    runGeneration.current += 1;
+     if (loopID.current) {
+       timer.unsubscribe(loopID.current);
+     } else {

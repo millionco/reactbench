@@ -1,0 +1,7 @@
+{
+  "name": "softmaple-cross-tab-selection-preservation",
+  "runner": "custom-test-harness",
+  "frameworks": ["vitest", "playwright"],
+  "unitCoverage": ["insertion mapping", "deletion mapping", "overlap collapse", "selection boundary behavior", "ordered operation chains"],
+  "browserCoverage": ["real two-tab BroadcastChannel sync", "remote insert and delete caret movement", "overlapping selection collapse", "multi-operation replacement mapping", "single-consumption across later commits", "late-tab snapshot convergence"]
+}

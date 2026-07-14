@@ -1,0 +1,39 @@
+diff --git a/src/components/chat/message/message-markdown-math.ts b/src/components/chat/message/message-markdown-math.ts
+new file mode 100644
+index 00000000..d6c71073
+--- /dev/null
++++ b/src/components/chat/message/message-markdown-math.ts
+@@ -0,0 +1,4 @@
++export const normalizeMathMarkdown = (text: string) =>
++  text
++    .replace(/\\\(([\s\S]*?)\\\)/g, "$$$1$")
++    .replace(/\\\[([\s\S]*?)\\\]/g, "\n\n$$$$\n$1\n$$$$\n\n");
+diff --git a/src/components/chat/message/message-markdown.tsx b/src/components/chat/message/message-markdown.tsx
+index 8c989ddf..a993fcaf 100644
+--- a/src/components/chat/message/message-markdown.tsx
++++ b/src/components/chat/message/message-markdown.tsx
+@@ -12,6 +12,7 @@ import ReactMarkdown, { defaultUrlTransform, type Components } from "react-mark
+ import remarkGfm from "remark-gfm";
+ import { FileLink } from "./file-link";
+ import { MessageMarkdownChartSpec } from "./message-markdown-chat";
++import { normalizeMathMarkdown } from "./message-markdown-math";
+ import { MessageMarkdownSql } from "./message-markdown-sql";
+ import { MessageMarkdownVizlayer } from "./message-markdown-vizlayer";
+ import { remarkExtensions } from "./remark-extensions";
+@@ -48,6 +49,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
+   expandable = false,
+ }: MessageMarkdownProps) {
+   const { connection } = useConnection();
++  const normalizedText = useMemo(() => normalizeMathMarkdown(text), [text]);
+ 
+   const codeBlockStyle = useMemo<React.CSSProperties>(
+     () => ({
+@@ -347,7 +349,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({
+         components={components}
+         urlTransform={transformMarkdownUrl}
+       >
+-        {text}
++        {normalizedText}
+       </ReactMarkdown>
+     </div>
+   );

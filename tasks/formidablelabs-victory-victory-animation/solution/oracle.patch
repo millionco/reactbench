@@ -1,0 +1,198 @@
+diff --git a/packages/victory-core/src/victory-animation/victory-animation.tsx b/packages/victory-core/src/victory-animation/victory-animation.tsx
+index 318c8c7..31f3ded 100644
+--- a/packages/victory-core/src/victory-animation/victory-animation.tsx
++++ b/packages/victory-core/src/victory-animation/victory-animation.tsx
+@@ -113,75 +113,60 @@ export const VictoryAnimation = ({
+   const loopID = React.useRef<number | undefined>(undefined);
+   const ease = d3Ease[formatAnimationName(easing)];
+ 
+-  React.useEffect(() => {
+-    // Length check prevents us from triggering `onEnd` in `traverseQueue`.
+-    if (queue.current.length) {
+-      traverseQueue();
+-    }
++  // The animation runs imperatively through the timer subscription, so each
++  // frame and each queue step needs the values from the *latest* render rather
++  // than the ones captured when an effect was first scheduled. Holding them on
++  // a ref that is refreshed every render keeps the imperative callbacks
++  // referentially stable while still reading current props/state, which lets
++  // the effects below own honest dependency arrays and keeps the parent
++  // callback / state updates out of the effect bodies themselves.
++  const latestRef = React.useRef({ state, data, duration, delay, ease, onEnd });
++  latestRef.current = { state, data, duration, delay, ease, onEnd };
+ 
+-    // Clean up the animation loop
+-    return () => {
+-      if (loopID.current) {
+-        timer.unsubscribe(loopID.current);
+-      } else {
+-        timer.stop();
+-      }
+-    };
+-    // eslint-disable-next-line react-hooks/exhaustive-deps
+-  }, []);
++  const runFrameRef = React.useRef<(elapsed: number) => void>(() => {});
++  const traverseQueueRef = React.useRef<() => void>(() => {});
++  const onDataChangeRef = React.useRef<() => void>(() => {});
++  const startRef = React.useRef<() => void>(() => {});
+ 
+-  React.useEffect(() => {
+-    // If the previous animation didn't finish, force it to complete before starting a new one
+-    if (
+-      interpolator.current &&
+-      state.animationInfo &&
+-      state.animationInfo.progress < 1
+-    ) {
+-      setState({
+-        data: interpolator.current(1),
+-        animationInfo: {
+-          progress: 1,
+-          animating: false,
+-          terminating: true,
+-        },
+-      });
+-    } else {
+-      // Cancel existing loop if it exists
+-      timer.unsubscribe(loopID.current);
+-      // Set the tween queue to the new data
+-      queue.current = Array.isArray(data) ? data : [data];
+-      // Start traversing the tween queue
+-      traverseQueue();
+-    }
+-    // eslint-disable-next-line react-hooks/exhaustive-deps
+-  }, [data]);
+-
+-  const traverseQueue = () => {
++  traverseQueueRef.current = () => {
++    const { delay: currentDelay, duration: currentDuration } =
++      latestRef.current;
+     if (queue.current.length) {
+       const nextData = queue.current[0];
+ 
+       // Compare cached version to next props
+-      interpolator.current = victoryInterpolator(state.data, nextData);
++      interpolator.current = victoryInterpolator(
++        latestRef.current.state.data,
++        nextData,
++      );
+ 
+       // Reset step to zero
+-      if (delay) {
++      if (currentDelay) {
+         setTimeout(() => {
+-          loopID.current = timer.subscribe(functionToBeRunEachFrame, duration);
+-        }, delay);
++          loopID.current = timer.subscribe(
++            (elapsed) => runFrameRef.current(elapsed),
++            currentDuration,
++          );
++        }, currentDelay);
+       } else {
+-        loopID.current = timer.subscribe(functionToBeRunEachFrame, duration);
++        loopID.current = timer.subscribe(
++          (elapsed) => runFrameRef.current(elapsed),
++          currentDuration,
++        );
+       }
+-    } else if (onEnd) {
+-      onEnd();
++    } else {
++      latestRef.current.onEnd?.();
+     }
+   };
+ 
+-  const functionToBeRunEachFrame = (elapsed: number) => {
++  runFrameRef.current = (elapsed: number) => {
+     if (!interpolator.current) return;
+ 
++    const { duration: currentDuration, ease: currentEase } = latestRef.current;
++
+     // Step can generate imprecise values, sometimes greater than 1
+     // if this happens set the state to 1 and return, cancelling the timer
+-    const step = duration ? elapsed / duration : 1;
++    const step = currentDuration ? elapsed / currentDuration : 1;
+ 
+     if (step >= 1) {
+       setState({
+@@ -196,7 +181,7 @@ export const VictoryAnimation = ({
+         timer.unsubscribe(loopID.current);
+       }
+       queue.current.shift();
+-      traverseQueue();
++      traverseQueueRef.current();
+       return;
+     }
+ 
+@@ -204,7 +189,7 @@ export const VictoryAnimation = ({
+     // current step value that's transformed by the ease function to the
+     // interpolator, which is cached for performance whenever props are received
+     setState({
+-      data: interpolator.current(ease(step)),
++      data: interpolator.current(currentEase(step)),
+       animationInfo: {
+         progress: step,
+         animating: step < 1,
+@@ -212,5 +197,63 @@ export const VictoryAnimation = ({
+     });
+   };
+ 
++  onDataChangeRef.current = () => {
++    const { state: currentState, data: currentData } = latestRef.current;
++    // If the previous animation didn't finish, force it to complete before
++    // starting a new one.
++    if (
++      interpolator.current &&
++      currentState.animationInfo &&
++      currentState.animationInfo.progress < 1
++    ) {
++      setState({
++        data: interpolator.current(1),
++        animationInfo: {
++          progress: 1,
++          animating: false,
++          terminating: true,
++        },
++      });
++    } else {
++      // Cancel existing loop if it exists
++      timer.unsubscribe(loopID.current);
++      // Set the tween queue to the new data
++      queue.current = Array.isArray(currentData) ? currentData : [currentData];
++      // Start traversing the tween queue
++      traverseQueueRef.current();
++    }
++  };
++
++  startRef.current = () => {
++    // Length check prevents us from triggering `onEnd` in `traverseQueue`.
++    if (queue.current.length) {
++      traverseQueueRef.current();
++    }
++  };
++
++  // The loop is subscribed lazily (and asynchronously when `delay` is set), so
++  // teardown still reads `loopID.current` when it actually runs rather than a
++  // value snapshotted at effect-setup time. `timer` comes from context and is a
++  // single shared instance, so capturing it once on mount is safe.
++  const teardown = () => {
++    if (loopID.current) {
++      timer.unsubscribe(loopID.current);
++    } else {
++      timer.stop();
++    }
++  };
++  const teardownRef = React.useRef(teardown);
++  teardownRef.current = teardown;
++
++  React.useEffect(() => {
++    startRef.current();
++    const runTeardown = teardownRef.current;
++    return () => runTeardown();
++  }, []);
++
++  React.useEffect(() => {
++    onDataChangeRef.current();
++  }, [data]);
++
+   return children(state.data, state.animationInfo);
+ };

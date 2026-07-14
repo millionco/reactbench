@@ -1,0 +1,33 @@
+--- a/src/components/Tooltip/Tooltip.tsx
++++ b/src/components/Tooltip/Tooltip.tsx
+@@ -320,9 +320,8 @@
+       handleHideTooltipDelayed()
+     } else {
+       handleShow(false)
+-    }
+-
+-    if (tooltipShowDelayTimerRef.current) {
+-      clearTimeout(tooltipShowDelayTimerRef.current)
++      if (tooltipShowDelayTimerRef.current) {
++        clearTimeout(tooltipShowDelayTimerRef.current)
++      }
+     }
+   }
+@@ -469,2 +468,6 @@
+   useEffect(() => {
++    if (activeAnchor && tooltipShowDelayTimerRef.current) {
++      handleShowTooltipDelayed()
++    }
++
+     const elementRefs = new Set(anchorRefs)
+@@ -819,6 +822,8 @@
+   useEffect(() => {
+-    if (tooltipShowDelayTimerRef.current) {
+-      clearTimeout(tooltipShowDelayTimerRef.current)
++    if (activeAnchor) {
++      if (tooltipShowDelayTimerRef.current) {
++        clearTimeout(tooltipShowDelayTimerRef.current)
++      }
+       handleShowTooltipDelayed(delayShow)
+     }
+   }, [delayShow])

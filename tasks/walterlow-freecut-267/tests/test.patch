@@ -1,0 +1,335 @@
+diff --git a/src/config/hotkeys.test.ts b/src/config/hotkeys.test.ts
+index eaccac0ef..9753c73b3 100644
+--- a/src/config/hotkeys.test.ts
++++ b/src/config/hotkeys.test.ts
+@@ -157,6 +157,24 @@ describe('createHotkeyExportDocument', () => {
+       }),
+     )
+   })
++
++  it('exports explicitly unassigned commands as custom blank bindings', () => {
++    const exportDocument = createHotkeyExportDocument({
++      DELETE_SELECTED: '',
++    })
++
++    expect(exportDocument.overrides).toEqual({
++      DELETE_SELECTED: '',
++    })
++    expect(exportDocument.commands).toContainEqual(
++      expect.objectContaining({
++        id: 'DELETE_SELECTED',
++        binding: '',
++        defaultBinding: 'delete',
++        isCustom: true,
++      }),
++    )
++  })
+ })
+ 
+ describe('parseHotkeyImportDocument', () => {
+diff --git a/src/features/settings/components/hotkey-editor-reset-dialog.test.tsx b/src/features/settings/components/hotkey-editor-reset-dialog.test.tsx
+new file mode 100644
+index 000000000..11951b2a4
+--- /dev/null
++++ b/src/features/settings/components/hotkey-editor-reset-dialog.test.tsx
+@@ -0,0 +1,214 @@
++import { createElement } from 'react'
++import * as DialogPrimitive from '@radix-ui/react-dialog'
++import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
++import { afterEach, beforeEach, describe, expect, it } from 'vite-plus/test'
++import { TooltipProvider } from '@/components/ui/tooltip'
++import { HotkeyEditor } from './hotkey-editor'
++import { useSettingsStore } from '../stores/settings-store'
++
++interface InitialHotkeyOverrides {
++  PLAY_PAUSE: string
++  PREVIOUS_FRAME?: string
++}
++
++const DEFAULT_OVERRIDES: InitialHotkeyOverrides = {
++  PLAY_PAUSE: 'shift+k',
++}
++const COMPONENT_TEST_TIMEOUT_MS = 15_000
++
++const storageValues = new Map<string, string>()
++const testStorage: Storage = {
++  get length() {
++    return storageValues.size
++  },
++  clear: () => storageValues.clear(),
++  getItem: (key) => storageValues.get(key) ?? null,
++  key: (index) => [...storageValues.keys()][index] ?? null,
++  removeItem: (key) => storageValues.delete(key),
++  setItem: (key, value) => storageValues.set(key, value),
++}
++
++const renderEditor = () =>
++  render(
++    createElement(
++      TooltipProvider,
++      null,
++      createElement(DialogPrimitive.Root, { open: true }, createElement(HotkeyEditor)),
++    ),
++  )
++
++const startConflictingCapture = async (overrides: InitialHotkeyOverrides = DEFAULT_OVERRIDES) => {
++  act(() => {
++    useSettingsStore.setState({ hotkeyOverrides: overrides })
++  })
++  fireEvent.click(screen.getByRole('button', { name: 'Record' }))
++  await screen.findByText('Listening')
++  fireEvent.keyDown(window, { key: 'ArrowRight', code: 'ArrowRight' })
++  await screen.findByText('Conflicts with Next frame')
++}
++
++const getConflictOverwriteButton = (action: string) => {
++  const conflictLabel = screen.getByText(`Conflicts with ${action}`)
++  const conflictRow = conflictLabel.parentElement
++  expect(conflictRow).not.toBeNull()
++  return within(conflictRow!).getByRole('button', { name: 'Overwrite' })
++}
++
++describe('HotkeyEditor behavior', () => {
++  beforeEach(() => {
++    storageValues.clear()
++    Object.defineProperty(globalThis, 'localStorage', {
++      configurable: true,
++      value: testStorage,
++    })
++    useSettingsStore.setState({ hotkeyOverrides: DEFAULT_OVERRIDES })
++    renderEditor()
++  })
++
++  afterEach(() => {
++    cleanup()
++    useSettingsStore.setState({ hotkeyOverrides: {} })
++  })
++
++  it('only resets custom shortcuts after confirmation', async () => {
++    fireEvent.click(screen.getByRole('button', { name: 'Reset All' }))
++    await screen.findByText('Reset all shortcuts?')
++    expect(useSettingsStore.getState().hotkeyOverrides).toEqual(DEFAULT_OVERRIDES)
++
++    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
++    await waitFor(() => expect(screen.queryByText('Reset all shortcuts?')).toBeNull())
++    expect(useSettingsStore.getState().hotkeyOverrides).toEqual(DEFAULT_OVERRIDES)
++
++    fireEvent.click(screen.getByRole('button', { name: 'Reset All' }))
++    await screen.findByText('Reset all shortcuts?')
++    fireEvent.keyDown(document, { key: 'Escape', code: 'Escape' })
++    await waitFor(() => expect(screen.queryByText('Reset all shortcuts?')).toBeNull())
++    expect(useSettingsStore.getState().hotkeyOverrides).toEqual(DEFAULT_OVERRIDES)
++
++    fireEvent.click(screen.getByRole('button', { name: 'Reset All' }))
++    await screen.findByText('Reset all shortcuts?')
++    fireEvent.click(screen.getByRole('button', { name: 'Reset all' }))
++    await waitFor(() => expect(useSettingsStore.getState().hotkeyOverrides).toEqual({}))
++  }, COMPONENT_TEST_TIMEOUT_MS)
++
++  it('stages a conflict overwrite and persists it only when Save is clicked', async () => {
++    await startConflictingCapture()
++
++    fireEvent.click(getConflictOverwriteButton('Next frame'))
++    expect(useSettingsStore.getState().hotkeyOverrides).toEqual(DEFAULT_OVERRIDES)
++    expect(screen.getByRole('button', { name: 'Save' })).not.toBeDisabled()
++
++    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
++    await waitFor(() =>
++      expect(useSettingsStore.getState().hotkeyOverrides).toEqual({
++        NEXT_FRAME: '',
++        PLAY_PAUSE: 'right',
++      }),
++    )
++  }, COMPONENT_TEST_TIMEOUT_MS)
++
++  it('stages multiple conflicts independently before Save persists the resolution', async () => {
++    const initialOverrides = {
++      PLAY_PAUSE: 'shift+k',
++      PREVIOUS_FRAME: 'right',
++    }
++    await startConflictingCapture(initialOverrides)
++    await screen.findByText('Conflicts with Previous frame')
++
++    fireEvent.click(getConflictOverwriteButton('Previous frame'))
++    expect(useSettingsStore.getState().hotkeyOverrides).toEqual(initialOverrides)
++    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
++    expect(screen.queryByText('Conflicts with Previous frame')).toBeNull()
++    expect(screen.getByText('Conflicts with Next frame')).toBeInTheDocument()
++
++    fireEvent.click(getConflictOverwriteButton('Next frame'))
++    expect(useSettingsStore.getState().hotkeyOverrides).toEqual(initialOverrides)
++    expect(screen.getByRole('button', { name: 'Save' })).not.toBeDisabled()
++
++    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
++    await waitFor(() =>
++      expect(useSettingsStore.getState().hotkeyOverrides).toEqual({
++        PLAY_PAUSE: 'right',
++        PREVIOUS_FRAME: '',
++        NEXT_FRAME: '',
++      }),
++    )
++  }, COMPONENT_TEST_TIMEOUT_MS)
++
++  it('stages all remaining conflicts without persisting before Save', async () => {
++    const initialOverrides = {
++      PLAY_PAUSE: 'shift+k',
++      PREVIOUS_FRAME: 'right',
++    }
++    await startConflictingCapture(initialOverrides)
++    await screen.findByText('Conflicts with Previous frame')
++
++    fireEvent.click(screen.getByRole('button', { name: 'Overwrite all' }))
++    expect(useSettingsStore.getState().hotkeyOverrides).toEqual(initialOverrides)
++    expect(screen.getByRole('button', { name: 'Save' })).not.toBeDisabled()
++
++    fireEvent.click(screen.getByRole('button', { name: 'Save' }))
++    await waitFor(() =>
++      expect(useSettingsStore.getState().hotkeyOverrides).toEqual({
++        PLAY_PAUSE: 'right',
++        PREVIOUS_FRAME: '',
++        NEXT_FRAME: '',
++      }),
++    )
++  }, COMPONENT_TEST_TIMEOUT_MS)
++
++  it.each(['Cancel', 'Escape', 'Unmount'])(
++    '%s abandons staged conflict resolution without changing the store',
++    async (abandonAction) => {
++      const initialOverrides = {
++        PLAY_PAUSE: 'shift+k',
++        PREVIOUS_FRAME: 'right',
++      }
++      await startConflictingCapture(initialOverrides)
++      fireEvent.click(getConflictOverwriteButton('Previous frame'))
++      expect(useSettingsStore.getState().hotkeyOverrides).toEqual(initialOverrides)
++
++      if (abandonAction === 'Cancel') {
++        fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
++      } else if (abandonAction === 'Escape') {
++        fireEvent.keyDown(window, { key: 'Escape', code: 'Escape' })
++      } else {
++        cleanup()
++      }
++
++      await waitFor(() =>
++        expect(useSettingsStore.getState().hotkeyOverrides).toEqual(initialOverrides),
++      )
++    },
++    COMPONENT_TEST_TIMEOUT_MS,
++  )
++
++  it('clears staged conflict decisions when a different draft binding is recorded', async () => {
++    await startConflictingCapture()
++    fireEvent.click(getConflictOverwriteButton('Next frame'))
++    expect(screen.getByRole('button', { name: 'Save' })).not.toBeDisabled()
++
++    fireEvent.keyDown(window, { key: 'ArrowLeft', code: 'ArrowLeft' })
++    await screen.findByText('Conflicts with Previous frame')
++    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled()
++    expect(useSettingsStore.getState().hotkeyOverrides).toEqual(DEFAULT_OVERRIDES)
++  }, COMPONENT_TEST_TIMEOUT_MS)
++
++  it('labels an unassigned command and disables Unbind', async () => {
++    fireEvent.click(screen.getByRole('button', { name: 'Unbind' }))
++
++    await waitFor(() =>
++      expect(useSettingsStore.getState().hotkeyOverrides).toEqual({ PLAY_PAUSE: '' }),
++    )
++    expect(screen.getByRole('button', { name: 'Unbind' })).toBeDisabled()
++    expect(screen.getAllByText('Unassigned').length).toBeGreaterThan(0)
++  }, COMPONENT_TEST_TIMEOUT_MS)
++
++  it('filters shortcuts and displays the localized result count', async () => {
++    const searchInput = screen.getByPlaceholderText('Search commands or shortcuts')
++    fireEvent.change(searchInput, { target: { value: 'export' } })
++
++    expect(await screen.findByText('1 result')).toBeInTheDocument()
++    expect(screen.getAllByText('Export video').length).toBeGreaterThan(0)
++  }, COMPONENT_TEST_TIMEOUT_MS)
++})
+diff --git a/src/features/settings/components/hotkey-editor-search.test.ts b/src/features/settings/components/hotkey-editor-search.test.ts
+new file mode 100644
+index 000000000..274c9ab41
+--- /dev/null
++++ b/src/features/settings/components/hotkey-editor-search.test.ts
+@@ -0,0 +1,80 @@
++import { describe, expect, it } from 'vite-plus/test'
++import { HOTKEYS } from '@/config/hotkeys'
++import {
++  HOTKEY_EDITOR_SECTIONS,
++  getHotkeyBindingDisplayLabel,
++  getHotkeyEditorSearchResults,
++} from './hotkey-editor-sections'
++
++describe('getHotkeyEditorSearchResults', () => {
++  it('filters commands by localized label', () => {
++    const results = getHotkeyEditorSearchResults({
++      query: 'ripple',
++      sections: HOTKEY_EDITOR_SECTIONS,
++      hotkeys: HOTKEYS,
++      translate: (key) =>
++        key.endsWith('rippleDeleteSelectedItems') ? 'Ripple delete selected items' : key,
++    })
++
++    expect(results.map((result) => result.item.labelKey)).toEqual([
++      'projects.settings.hotkeys.items.rippleDeleteSelectedItems',
++    ])
++  })
++
++  it('filters commands by current shortcut binding', () => {
++    const results = getHotkeyEditorSearchResults({
++      query: ' ALT+Q ',
++      sections: HOTKEY_EDITOR_SECTIONS,
++      hotkeys: { ...HOTKEYS, EXPORT: 'alt+q' },
++      translate: (key) => (key.endsWith('exportVideo') ? 'Export video' : key),
++    })
++
++    expect(results.map((result) => result.item.labelKey)).toEqual([
++      'projects.settings.hotkeys.items.exportVideo',
++    ])
++  })
++
++  it('matches translated section titles case-insensitively', () => {
++    const results = getHotkeyEditorSearchResults({
++      query: '  PLAYBACK  ',
++      sections: HOTKEY_EDITOR_SECTIONS,
++      hotkeys: HOTKEYS,
++      translate: (key) =>
++        key === 'projects.settings.hotkeys.sections.playback.title' ? 'Playback' : key,
++    })
++
++    expect(results.map((result) => result.item.labelKey)).toEqual(
++      HOTKEY_EDITOR_SECTIONS[0]!.items.map((item) => item.labelKey),
++    )
++  })
++
++  it('matches command keys and returns no results for a blank query', () => {
++    const commandKeyResults = getHotkeyEditorSearchResults({
++      query: 'delete_selected',
++      sections: HOTKEY_EDITOR_SECTIONS,
++      hotkeys: HOTKEYS,
++      translate: (key) => key,
++    })
++    const blankResults = getHotkeyEditorSearchResults({
++      query: '   ',
++      sections: HOTKEY_EDITOR_SECTIONS,
++      hotkeys: HOTKEYS,
++      translate: (key) => key,
++    })
++
++    expect(commandKeyResults.map((result) => result.item.labelKey)).toEqual([
++      'projects.settings.hotkeys.items.deleteSelectedItems',
++    ])
++    expect(blankResults).toEqual([])
++  })
++})
++
++describe('getHotkeyBindingDisplayLabel', () => {
++  it('shows an explicit unassigned label for blank bindings', () => {
++    expect(getHotkeyBindingDisplayLabel('', 'Unassigned')).toBe('Unassigned')
++  })
++
++  it('formats non-empty bindings normally', () => {
++    expect(getHotkeyBindingDisplayLabel('mod+shift+e', 'Unassigned')).toBe('Ctrl + Shift + E')
++  })
++})

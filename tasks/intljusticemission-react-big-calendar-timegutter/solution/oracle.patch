@@ -1,0 +1,59 @@
+diff --git a/src/TimeGutter.js b/src/TimeGutter.js
+index a2b8496..a36f78e 100644
+--- a/src/TimeGutter.js
++++ b/src/TimeGutter.js
+@@ -1,4 +1,4 @@
+-import React, { useState, useEffect, useCallback, useMemo } from 'react'
++import React, { useCallback, useMemo } from 'react'
+ import clsx from 'clsx'
+ import PropTypes from 'prop-types'
+ 
+@@ -36,37 +36,20 @@ const TimeGutter = ({
+   const { timeGutterWrapper: TimeGutterWrapper } = components
+   const { start, end } = useMemo(
+     () => adjustForDST({ min, max, localizer }),
+-    // eslint-disable-next-line react-hooks/exhaustive-deps
+-    [min?.toISOString(), max?.toISOString(), localizer]
++    [min, max, localizer]
+   )
+-  const [slotMetrics, setSlotMetrics] = useState(
+-    getSlotMetrics({
+-      min: start,
+-      max: end,
+-      timeslots,
+-      step,
+-      localizer,
+-    })
++  const slotMetrics = useMemo(
++    () =>
++      getSlotMetrics({
++        min: start,
++        max: end,
++        timeslots,
++        step,
++        localizer,
++      }),
++    [start, end, timeslots, step, localizer]
+   )
+ 
+-  useEffect(() => {
+-    if (slotMetrics) {
+-      setSlotMetrics(
+-        slotMetrics.update({
+-          min: start,
+-          max: end,
+-          timeslots,
+-          step,
+-          localizer,
+-        })
+-      )
+-    }
+-    /**
+-     * We don't want this to fire when slotMetrics is updated as it would recursively bomb
+-     */
+-    // eslint-disable-next-line react-hooks/exhaustive-deps
+-  }, [start?.toISOString(), end?.toISOString(), timeslots, step])
+-
+   const renderSlot = useCallback(
+     (value, idx) => {
+       if (idx) return null // don't return the first (0) idx

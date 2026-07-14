@@ -1,0 +1,263 @@
+diff --git a/src/components/RangeSelect/RangeSelect.tsx b/src/components/RangeSelect/RangeSelect.tsx
+new file mode 100644
+index 0000000..f54fca1
+--- /dev/null
++++ b/src/components/RangeSelect/RangeSelect.tsx
+@@ -0,0 +1,238 @@
++'use client';
++
++import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
++import { Box, Button, Flex, Input, Popover, Text, useToken } from '@chakra-ui/react';
++import { CaretDownIcon, CaretUpIcon, WarningOctagonIcon } from '@phosphor-icons/react';
++import { selectRecipe } from '../../constants/componentCustomizations';
++
++export interface RangeSelectProps
++  extends Omit<React.HTMLAttributes<HTMLDivElement>, 'onChange' | 'color'> {
++  borderColor?: string;
++  backgroundColor?: string;
++  color?: string;
++  clearText?: string;
++  placeholder?: string;
++  isDisabled?: boolean;
++  isInvalid?: boolean;
++  isFullWidth?: boolean;
++  rangeFromLabel?: string;
++  rangeToLabel?: string;
++  rangeFromError?: string;
++  rangeToError?: string;
++  value?: string[];
++  min?: number;
++  max?: number;
++  step?: number;
++  size?: 'xs' | 'sm' | 'md' | 'lg' | 'xl';
++  dropdownWidth?: '3xs' | '2xs' | 'xs' | 'sm' | 'md' | 'lg' | 'xl';
++  variant?: 'filled' | 'unstyled' | 'flushed' | 'outline';
++  onChange?: (value: string[]) => void;
++  onClose?: () => void;
++}
++
++export const RangeSelect: React.FC<RangeSelectProps> = ({
++  color = 'black',
++  placeholder = 'Select a range',
++  clearText = 'Clear',
++  isDisabled = false,
++  isInvalid = false,
++  isFullWidth = true,
++  rangeFromLabel = 'From',
++  rangeToLabel = 'To',
++  rangeFromError,
++  rangeToError,
++  size = 'md',
++  dropdownWidth,
++  variant = 'outline',
++  borderColor = selectRecipe.variants?.visual[variant]?.borderColor,
++  backgroundColor = selectRecipe.variants?.visual[variant]?.backgroundColor,
++  value,
++  min,
++  max,
++  step,
++  onChange,
++  onClose,
++  ...rest
++}) => {
++  const [isOpen, setIsOpen] = useState(false);
++  const [internalSelectedOptions, setInternalSelectedOptions] = useState<string[]>(value ?? []);
++  const [menuWidth, setMenuWidth] = useState('auto');
++  const menuButtonRef = useRef<HTMLDivElement>(null);
++  const [red500] = useToken('colors', ['red.500']);
++  const [space3] = useToken('space', ['3']);
++
++  useEffect(() => {
++    if (value !== undefined) {
++      setInternalSelectedOptions(value);
++      setIsOpen(false);
++    }
++  }, [value]);
++
++  useEffect(() => {
++    if (!menuButtonRef.current) return;
++    const observer = new ResizeObserver(() => {
++      if (menuButtonRef.current) {
++        setMenuWidth(`${menuButtonRef.current.offsetWidth}px`);
++      }
++    });
++    observer.observe(menuButtonRef.current);
++    return () => observer.disconnect();
++  }, []);
++
++  const handleRangeChange = useCallback(
++    (index: number, inputValue: string) => {
++      const nextValue = [...internalSelectedOptions];
++      while (nextValue.length < 2) nextValue.push('');
++      nextValue[index] = inputValue;
++      setInternalSelectedOptions(nextValue);
++      onChange?.(nextValue);
++    },
++    [internalSelectedOptions, onChange]
++  );
++
++  const onClear = useCallback(() => {
++    setInternalSelectedOptions([]);
++    onChange?.([]);
++  }, [onChange]);
++
++  const displayText = useMemo(() => {
++    if (internalSelectedOptions[0] || internalSelectedOptions[1]) {
++      return `${internalSelectedOptions[0] || '...'} – ${
++        internalSelectedOptions[1] || '...'
++      }`;
++    }
++    return placeholder;
++  }, [internalSelectedOptions, placeholder]);
++
++  return (
++    <Box display={isFullWidth ? 'block' : 'inline-block'} width={isFullWidth ? '100%' : 'auto'}>
++      <Popover.Root
++        open={isDisabled ? false : isOpen}
++        onOpenChange={(details) => {
++          setIsOpen(details.open);
++          if (!details.open) onClose?.();
++        }}
++        positioning={{ placement: 'bottom-start', flip: false, sameWidth: false }}
++      >
++        <Popover.Trigger asChild>
++          <Flex
++            ref={menuButtonRef}
++            role="combobox"
++            border={selectRecipe.variants?.visual[variant]?.border}
++            borderColor={isInvalid ? red500 : borderColor}
++            borderRadius={selectRecipe.variants?.visual[variant]?.borderRadius}
++            borderBottomWidth={selectRecipe.variants?.visual[variant]?.borderBottomWidth}
++            borderBottomStyle={selectRecipe.variants?.visual[variant]?.borderBottomStyle}
++            pl="2"
++            height={selectRecipe.variants?.size[size]?.height}
++            align="center"
++            cursor={isDisabled ? 'not-allowed' : 'pointer'}
++            bg={isDisabled ? 'gray.200' : backgroundColor}
++            position="relative"
++            aria-expanded={isOpen}
++            aria-haspopup="listbox"
++            width={isFullWidth ? '100%' : 'auto'}
++            tabIndex={isDisabled ? -1 : 0}
++            justifyContent="space-between"
++            _focusVisible={{ outline: 'none', boxShadow: 'none' }}
++            {...rest}
++          >
++            <Text
++              id="range-select-label"
++              fontSize={selectRecipe.variants?.size[size]?.fontSize}
++              color={color}
++              truncate
++              whiteSpace="nowrap"
++              overflow="hidden"
++              textOverflow="ellipsis"
++              flexShrink={1}
++            >
++              {displayText}
++            </Text>
++            <Box ml="auto" px={space3} display="flex" alignItems="center" pointerEvents="none">
++              {isOpen ? <CaretUpIcon color={color} /> : <CaretDownIcon color={color} />}
++            </Box>
++          </Flex>
++        </Popover.Trigger>
++
++        <Popover.Positioner>
++          <Popover.Content
++            mt="2"
++            p="2"
++            borderRadius="lg"
++            maxHeight="72"
++            overflowY="auto"
++            zIndex="popover"
++            width={dropdownWidth || 'auto'}
++            minWidth={menuWidth}
++          >
++            <Flex direction="column" gap="4" p="2">
++              <Flex flexDir="row" justifyContent="flex-end">
++                <Button
++                  id="clear-button"
++                  size="sm"
++                  onClick={onClear}
++                  color="blue.500"
++                  variant="ghost"
++                >
++                  {clearText}
++                </Button>
++              </Flex>
++              <Flex gap="3">
++                <Box flex="1">
++                  <Text id="range-from-label" fontSize="sm" mb="1" fontWeight="medium">
++                    {rangeFromLabel}
++                  </Text>
++                  <Input
++                    id="range-from-input"
++                    type="number"
++                    size="md"
++                    value={internalSelectedOptions[0] || ''}
++                    onChange={(event) => handleRangeChange(0, event.target.value)}
++                    min={min}
++                    max={max}
++                    step={step}
++                    borderRadius="md"
++                    borderColor={rangeFromError ? red500 : 'gray.200'}
++                    borderWidth={rangeFromError ? '2px' : '1px'}
++                  />
++                  {rangeFromError && (
++                    <Flex id="range-from-error" align="center" mt="1" gap="1">
++                      <WarningOctagonIcon color={red500} size={12} />
++                      <Text fontSize="xs" color={red500}>
++                        {rangeFromError}
++                      </Text>
++                    </Flex>
++                  )}
++                </Box>
++                <Box flex="1">
++                  <Text id="range-to-label" fontSize="sm" mb="1" fontWeight="medium">
++                    {rangeToLabel}
++                  </Text>
++                  <Input
++                    id="range-to-input"
++                    type="number"
++                    size="md"
++                    value={internalSelectedOptions[1] || ''}
++                    onChange={(event) => handleRangeChange(1, event.target.value)}
++                    borderRadius="md"
++                    borderColor={rangeToError ? red500 : 'gray.200'}
++                    borderWidth={rangeToError ? '2px' : '1px'}
++                  />
++                  {rangeToError && (
++                    <Flex id="range-to-error" align="center" mt="1" gap="1">
++                      <WarningOctagonIcon color={red500} size={12} />
++                      <Text fontSize="xs" color={red500}>
++                        {rangeToError}
++                      </Text>
++                    </Flex>
++                  )}
++                </Box>
++              </Flex>
++            </Flex>
++          </Popover.Content>
++        </Popover.Positioner>
++      </Popover.Root>
++    </Box>
++  );
++};
+diff --git a/src/components/RangeSelect/index.ts b/src/components/RangeSelect/index.ts
+new file mode 100644
+index 0000000..2995b20
+--- /dev/null
++++ b/src/components/RangeSelect/index.ts
+@@ -0,0 +1 @@
++export { RangeSelect, type RangeSelectProps } from './RangeSelect';
+diff --git a/src/index.tsx b/src/index.tsx
+index 73f35da..b28383b 100644
+--- a/src/index.tsx
++++ b/src/index.tsx
+@@ -40,6 +40,7 @@ export { BoemlyThemeProvider } from './components/BoemlyThemeProvider';
+ export { Wrapper } from './components/Wrapper';
+ export { ConfirmAction } from './components/ConfirmAction';
+ export { Select, type BoemlySelectProps } from './components/Select';
++export { RangeSelect, type RangeSelectProps } from './components/RangeSelect';
+ export { SubmissionConfirm } from './components/SubmissionConfirm';
+ 
+ export {

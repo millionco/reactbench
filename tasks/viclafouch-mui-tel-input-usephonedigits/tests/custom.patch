@@ -1,0 +1,218 @@
+diff --git a/src/shared/hooks/usePhoneDigits.ts b/src/shared/hooks/usePhoneDigits.ts
+index 08495f6..9ab25e0 100644
+--- a/src/shared/hooks/usePhoneDigits.ts
++++ b/src/shared/hooks/usePhoneDigits.ts
+@@ -11,6 +11,8 @@ import {
+ import { removeOccurrence } from '@shared/helpers/string'
+ import type { MuiTelInputInfo, MuiTelInputReason } from '../../index.types'
+ 
++const sharedAsYouType = new AsYouType()
++
+ type UsePhoneDigitsParams = {
+   value: string
+   onChange?: (value: string, info: MuiTelInputInfo) => void
+@@ -104,10 +106,11 @@ export default function usePhoneDigits({
+   disableFormatting,
+   forceCallingCode
+ }: UsePhoneDigitsParams) {
++  const onChangeRef = React.useRef(onChange)
+   const previousCountryRef = React.useRef<MuiTelInputCountry | null>(
+     defaultCountry || null
+   )
+-  const asYouTypeRef = React.useRef<AsYouType>(new AsYouType(defaultCountry))
++  const asYouTypeRef = React.useRef<AsYouType | null>(sharedAsYouType)
+   const inputRef = React.useRef<HTMLInputElement | null>(null)
+   const [previousDefaultCountry, setPreviousDefaultCountry] = React.useState<
+     MuiTelInputCountry | undefined
+@@ -122,20 +125,46 @@ export default function usePhoneDigits({
+   })
+ 
+   const [previousValue, setPreviousValue] = React.useState(value)
++  const previousDisableFormattingRef = React.useRef(disableFormatting)
++  const previousForceCallingCodeRef = React.useRef(forceCallingCode)
++  const previousOnlyCountriesRef = React.useRef(onlyCountries)
++  const previousExcludedCountriesRef = React.useRef(excludedCountries)
++  const previousContinentsRef = React.useRef(continents)
++
++  const getAsYouType = (): AsYouType => {
++    if (asYouTypeRef.current) {
++      return asYouTypeRef.current
++    }
++
++    const asYouType = new AsYouType(defaultCountry)
++    asYouTypeRef.current = asYouType
++    return asYouType
++  }
+ 
+   const buildInputInfo = (
+     reason: MuiTelInputReason,
+     countryOverride?: MuiTelInputCountry | null
+   ): MuiTelInputInfo => {
++    const asYouType = getAsYouType()
++    const resolvedCountryOverride =
++      reason === 'blur' ? state.isoCode : countryOverride
++    const hasCountryOverride = resolvedCountryOverride !== undefined
++    const hasAcceptedCountry =
++      !hasCountryOverride || resolvedCountryOverride !== null
++
+     return {
+-      countryCallingCode: asYouTypeRef.current.getCallingCode() || null,
++      countryCallingCode: hasAcceptedCountry
++        ? asYouType.getCallingCode() || null
++        : null,
+       countryCode:
+-        countryOverride !== undefined
+-          ? countryOverride
+-          : asYouTypeRef.current.getCountry() || null,
+-      nationalNumber: asYouTypeRef.current.getNationalNumber(),
+-      numberType: asYouTypeRef.current.getNumber()?.getType() ?? null,
+-      numberValue: asYouTypeRef.current.getNumberValue() || null,
++        hasCountryOverride
++          ? resolvedCountryOverride
++          : asYouType.getCountry() || null,
++      nationalNumber: hasAcceptedCountry ? asYouType.getNationalNumber() : null,
++      numberType: hasAcceptedCountry
++        ? asYouType.getNumber()?.getType() ?? null
++        : null,
++      numberValue: asYouType.getNumberValue() || null,
+       reason
+     }
+   }
+@@ -152,9 +181,10 @@ export default function usePhoneDigits({
+   }
+ 
+   const typeNewValue = (inputValue: string): string => {
+-    asYouTypeRef.current.reset()
++    const asYouType = getAsYouType()
++    asYouType.reset()
+ 
+-    return asYouTypeRef.current.input(inputValue)
++    return asYouType.input(inputValue)
+   }
+ 
+   const makeSureStartWithPlusOrEmpty = (inputValue: string): string => {
+@@ -181,7 +211,7 @@ export default function usePhoneDigits({
+       : makeSureStartWithPlusOrEmpty(event.target.value)
+ 
+     const formattedValue = typeNewValue(inputValue)
+-    const newCountryCode = asYouTypeRef.current.getCountry()
++    const newCountryCode = getAsYouType().getCountry()
+     const previousCountry = previousCountryRef.current
+ 
+     let country: MuiTelInputCountry | null
+@@ -201,14 +231,14 @@ export default function usePhoneDigits({
+       country = previousCountry
+     }
+ 
+-    const numberValue = asYouTypeRef.current.getNumberValue() || ''
++    const numberValue = getAsYouType().getNumberValue() || ''
+ 
+     previousCountryRef.current = country
+ 
+     const phoneInfo = buildInputInfo('input', country)
+ 
+     if (numberValue && (!country || !matchIsIsoCodeValid(country))) {
+-      onChange?.(numberValue, {
++      onChangeRef.current?.(numberValue, {
+         ...phoneInfo,
+         countryCode: null,
+         countryCallingCode: null,
+@@ -221,7 +251,7 @@ export default function usePhoneDigits({
+       })
+     } else {
+       const valueToSet = disableFormatting ? numberValue : formattedValue
+-      onChange?.(valueToSet, phoneInfo)
++      onChangeRef.current?.(valueToSet, phoneInfo)
+       setPreviousValue(valueToSet)
+       setState({
+         isoCode: country,
+@@ -231,7 +261,19 @@ export default function usePhoneDigits({
+   }
+ 
+   React.useEffect(() => {
+-    if (value !== previousValue) {
++    const didControlledPropsChange =
++      disableFormatting !== previousDisableFormattingRef.current ||
++      forceCallingCode !== previousForceCallingCodeRef.current ||
++      onlyCountries !== previousOnlyCountriesRef.current ||
++      excludedCountries !== previousExcludedCountriesRef.current ||
++      continents !== previousContinentsRef.current
++
++    if (value !== previousValue || didControlledPropsChange) {
++      previousDisableFormattingRef.current = disableFormatting
++      previousForceCallingCodeRef.current = forceCallingCode
++      previousOnlyCountriesRef.current = onlyCountries
++      previousExcludedCountriesRef.current = excludedCountries
++      previousContinentsRef.current = continents
+       setPreviousValue(value)
+       const newState = getInitialState({
+         initialValue: value,
+@@ -247,15 +289,27 @@ export default function usePhoneDigits({
+           ? previousCountryRef.current
+           : newState.isoCode
+ 
+-      previousCountryRef.current = resolvedIsoCode
+-      setState({ ...newState, isoCode: resolvedIsoCode })
++      typeNewValue(newState.inputValue)
++      const numberValue = getAsYouType().getNumberValue() || ''
++      const hasRejectedCountry =
++        numberValue &&
++        resolvedIsoCode &&
++        !matchIsIsoCodeValid(resolvedIsoCode)
++      const nextState = hasRejectedCountry
++        ? { inputValue: numberValue, isoCode: null }
++        : { ...newState, isoCode: resolvedIsoCode }
++
++      previousCountryRef.current = nextState.isoCode
++      setState(nextState)
+     }
+   }, [
+     value,
+-    previousValue,
+     defaultCountry,
+     forceCallingCode,
+-    disableFormatting
++    disableFormatting,
++    onlyCountries,
++    excludedCountries,
++    continents
+   ])
+ 
+   React.useEffect(() => {
+@@ -263,15 +317,15 @@ export default function usePhoneDigits({
+       setPreviousDefaultCountry(defaultCountry)
+       asYouTypeRef.current = new AsYouType(defaultCountry)
+       const { inputValue, isoCode } = getInitialState({
+-        initialValue: '',
++        initialValue: value,
+         defaultCountry,
+         forceCallingCode,
+         disableFormatting
+       })
+       setPreviousValue(inputValue)
+-      asYouTypeRef.current.input(inputValue)
+-      previousCountryRef.current = asYouTypeRef.current.getCountry() || null
+-      onChange?.(inputValue, buildInputInfo('country'))
++      typeNewValue(inputValue)
++      const asYouType = getAsYouType()
++      previousCountryRef.current = asYouType.getCountry() || null
+       setState({
+         inputValue,
+         isoCode
+@@ -280,7 +333,6 @@ export default function usePhoneDigits({
+   }, [
+     defaultCountry,
+     previousDefaultCountry,
+-    onChange,
+     forceCallingCode,
+     disableFormatting
+   ])
+@@ -308,7 +360,7 @@ export default function usePhoneDigits({
+       newValue = typeNewValue(newValue)
+     }
+ 
+-    onChange?.(newValue, {
++    onChangeRef.current?.(newValue, {
+       ...buildInputInfo('country'),
+       // Some country have the same calling code, so we choose what the user has selected
+       countryCode: newCountry

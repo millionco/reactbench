@@ -1,0 +1,164 @@
+diff --git a/src/drop-workspace.tsx b/src/drop-workspace.tsx
+index 0889450b..14e8ad2e 100644
+--- a/src/drop-workspace.tsx
++++ b/src/drop-workspace.tsx
+@@ -17,2 +17,4 @@ export const DropWorkspace = ({
+-    setDragOverPath(folderElement?.dataset.path ?? null);
+-  }, []);
++    setDragOverPath(
++      folderElement?.dataset.path ?? defaultDestination ?? "root",
++    );
++  }, [defaultDestination]);
+@@ -23,16 +25,35 @@ export const DropWorkspace = ({
+-      if (!isOwner) return;
+-
+-      const folderElement = findDropFolderElement(event.target);
+-      const destination = folderElement?.dataset.path ?? defaultDestination;
+-      if (destination === undefined) return;
+-
+-      const files = await getFilesFromDataTransferItems(
+-        event.dataTransfer.items,
+-      );
+-      await onUpload({
+-        destination,
+-        files,
+-        paths: resolveUploadPaths(files, destination),
+-      });
+-      setErrorMessage("");
+-      setDragOverPath(null);
++      try {
++        if (!isOwner) return;
++
++        const folderElement = findDropFolderElement(event.target);
++        const destination =
++          folderElement?.dataset.path ?? defaultDestination ?? "";
++        const fileItems = Array.from(event.dataTransfer.items).filter(
++          (item) => item.kind === "file",
++        );
++
++        if (fileItems.length === 0 && event.dataTransfer.items.length > 0) {
++          setErrorMessage("");
++          return;
++        }
++
++        const files =
++          fileItems.length > 0
++            ? await getFilesFromDataTransferItems(fileItems)
++            : Array.from(event.dataTransfer.files);
++        if (files.length === 0) {
++          setErrorMessage("");
++          return;
++        }
++
++        await onUpload({
++          destination,
++          files,
++          paths: resolveUploadPaths(files, destination),
++        });
++        setErrorMessage("");
++      } catch {
++        setErrorMessage("The dropped files could not be processed. Try again.");
++      } finally {
++        setDragOverPath(null);
++      }
+diff --git a/src/get-files-from-data-transfer-items.ts b/src/get-files-from-data-transfer-items.ts
+index e56100de..c48351c1 100644
+--- a/src/get-files-from-data-transfer-items.ts
++++ b/src/get-files-from-data-transfer-items.ts
+@@ -7 +7,21 @@ export const getFilesFromDataTransferItems = async (
+-    if (!entry.isFile) return;
++    if (entry.isFile) {
++      await new Promise<void>((resolve, reject) => {
++        const fileEntry = entry as FileSystemFileEntryLike;
++        fileEntry.file((file) => {
++          const relativePath = entry.fullPath.replace(/^\//, "");
++          if (relativePath && relativePath !== file.name) {
++            const fileWithPath = new File([file], relativePath, {
++              type: file.type,
++            });
++            Object.defineProperty(fileWithPath, "webkitRelativePath", {
++              value: relativePath,
++            });
++            files.push(fileWithPath);
++          } else {
++            files.push(file);
++          }
++          resolve();
++        }, reject);
++      });
++      return;
++    }
+@@ -9,13 +29,11 @@ export const getFilesFromDataTransferItems = async (
+-    await new Promise<void>((resolve, reject) => {
+-      const fileEntry = entry as FileSystemFileEntryLike;
+-      fileEntry.file((file) => {
+-        const relativePath = entry.fullPath.replace(/^\//, "");
+-        if (relativePath && relativePath !== file.name) {
+-          const fileWithPath = new File([file], relativePath, { type: file.type });
+-          files.push(fileWithPath);
+-        } else {
+-          files.push(file);
+-        }
+-        resolve();
+-      }, reject);
+-    });
++    if (!entry.isDirectory) return;
++    const directoryEntry = entry as FileSystemDirectoryEntryLike;
++    const reader = directoryEntry.createReader();
++
++    while (true) {
++      const batch = await new Promise<Array<FileSystemEntryLike>>(
++        (resolve, reject) => reader.readEntries(resolve, reject),
++      );
++      if (batch.length === 0) break;
++      for (const childEntry of batch) await processEntry(childEntry);
++    }
+@@ -24,3 +42,7 @@ export const getFilesFromDataTransferItems = async (
+-  const entries = Array.from(items)
+-    .map((item) => item.webkitGetAsEntry())
+-    .filter(Boolean) as Array<FileSystemEntryLike>;
++  for (const item of Array.from(items)) {
++    if (item.kind !== "file") continue;
++    const entry = item.webkitGetAsEntry();
++    if (entry) {
++      await processEntry(entry);
++      continue;
++    }
+@@ -28 +50,3 @@ export const getFilesFromDataTransferItems = async (
+-  await Promise.all(entries.map(processEntry));
++    const directFile = item.getAsFile();
++    if (directFile) files.push(directFile);
++  }
+diff --git a/src/resolve-upload-paths.ts b/src/resolve-upload-paths.ts
+index a59a32ea..b1a386dc 100644
+--- a/src/resolve-upload-paths.ts
++++ b/src/resolve-upload-paths.ts
+@@ -7 +7 @@ export const resolveUploadPaths = (
+-  const normalizedDirectory = directory || UPLOADS_DIRECTORY;
++  const normalizedDirectory = directory;
+@@ -9 +9 @@ export const resolveUploadPaths = (
+-    (file) => file.webkitRelativePath !== "",
++    (file) => Boolean(file.webkitRelativePath),
+@@ -11 +11,2 @@ export const resolveUploadPaths = (
+-  const isFullFolderUpload = filesWithRelativePaths.length === files.length;
++  const isFullFolderUpload =
++    files.length > 0 && filesWithRelativePaths.length === files.length;
+@@ -19 +20,2 @@ export const resolveUploadPaths = (
+-      return `${normalizedDirectory}/${file.name.replace(/\s+/g, "_")}`;
++      const fileName = file.name.replace(/\s+/g, "_");
++      return normalizedDirectory ? `${normalizedDirectory}/${fileName}` : fileName;
+@@ -25,0 +28,2 @@ export const resolveUploadPaths = (
++    if (normalizedDirectory === "") return relativePath;
++
+@@ -27,4 +31,4 @@ export const resolveUploadPaths = (
+-      const pathWithoutRoot = relativePath.replace(
+-        new RegExp(`^${rootFolderName}/`),
+-        "",
+-      );
++      const rootPrefix = `${rootFolderName}/`;
++      const pathWithoutRoot = relativePath.startsWith(rootPrefix)
++        ? relativePath.slice(rootPrefix.length)
++        : relativePath;
+@@ -33 +37 @@ export const resolveUploadPaths = (
+-        : normalizedDirectory;
++        : `${normalizedDirectory}/${file.name.replace(/\s+/g, "_")}`;

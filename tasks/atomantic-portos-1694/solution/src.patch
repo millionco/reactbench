@@ -1,0 +1,45 @@
+diff --git a/client/src/components/pipeline/editorial/CheckKindBadge.jsx b/client/src/components/pipeline/editorial/CheckKindBadge.jsx
+index fe3d8920e..94dd461d9 100644
+--- a/client/src/components/pipeline/editorial/CheckKindBadge.jsx
++++ b/client/src/components/pipeline/editorial/CheckKindBadge.jsx
+@@ -15,7 +15,7 @@ const KIND_BADGE = {
+ function CheckKindBadge({ kind, className = '' }) {
+   return (
+     <span className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border ${KIND_BADGE[kind] || KIND_BADGE.deterministic} ${className}`}>
+-      {kind === 'llm' ? 'AI' : 'rule'}
++      {kind === 'llm' ? 'LLM' : 'rule'}
+     </span>
+   );
+ }
+diff --git a/client/src/lib/editorialChecks.js b/client/src/lib/editorialChecks.js
+index d38283694..c6adfd4a9 100644
+--- a/client/src/lib/editorialChecks.js
++++ b/client/src/lib/editorialChecks.js
+@@ -58,10 +58,13 @@ export function groupFindingsByCheck(comments = [], rowsById = {}) {
+     if (!c?.checkId) continue;
+     if (!groups.has(c.checkId)) {
+       const row = lookup.get(c.checkId) || null;
++      const description = typeof row?.description === 'string' && row.description.trim()
++        ? row.description
++        : null;
+       groups.set(c.checkId, {
+         checkId: c.checkId,
+         label: row?.label || c.checkId,
+-        description: row?.description || null,
++        description,
+         scope: row?.scope || 'other',
+         kind: row?.kind || null,
+         comments: [],
+diff --git a/client/src/pages/PipelineEditorialChecks.jsx b/client/src/pages/PipelineEditorialChecks.jsx
+index 84139ed74..e443853d1 100644
+--- a/client/src/pages/PipelineEditorialChecks.jsx
++++ b/client/src/pages/PipelineEditorialChecks.jsx
+@@ -79,7 +79,7 @@ export default function PipelineEditorialChecks() {
+   } = useProviderModels({ allowDefault: true, silent: true });
+ 
+   const checksById = useMemo(
+-    () => Object.fromEntries(checks.filter((check) => check.enabled).map((check) => [check.id, check])),
++    () => Object.fromEntries(checks.map((check) => [check.id, check])),
+     [checks],
+   );
+   const enabledCount = useMemo(() => checks.filter((c) => c.enabled).length, [checks]);

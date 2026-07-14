@@ -1,0 +1,369 @@
+diff --git a/packages/docusaurus-theme-classic/src/theme/TabItem/index.tsx b/packages/docusaurus-theme-classic/src/theme/TabItem/index.tsx
+index 29b3bc84f..5037dc155 100644
+--- a/packages/docusaurus-theme-classic/src/theme/TabItem/index.tsx
++++ b/packages/docusaurus-theme-classic/src/theme/TabItem/index.tsx
+@@ -7,15 +7,20 @@
+
+ import React, {type ReactNode} from 'react';
+ import clsx from 'clsx';
++import {useTabs} from '@docusaurus/theme-common/internal';
+ import type {Props} from '@theme/TabItem';
+
+ import styles from './styles.module.css';
+
+-export default function TabItem({
++function TabItemPanel({
+   children,
+-  hidden,
+   className,
+-}: Props): ReactNode {
++  hidden,
++}: {
++  children: ReactNode;
++  className?: string;
++  hidden?: boolean;
++}) {
+   return (
+     <div
+       role="tabpanel"
+@@ -25,3 +30,23 @@ export default function TabItem({
+     </div>
+   );
+ }
++
++export default function TabItem({
++  children,
++  className,
++  value,
++}: Props): ReactNode {
++  const {selectedValue, lazy} = useTabs();
++  const isSelected = value === selectedValue;
++
++  // TODO Docusaurus v4: use <Activity> ?
++  if (!isSelected && lazy) {
++    return null;
++  }
++
++  return (
++    <TabItemPanel className={className} hidden={!isSelected}>
++      {children}
++    </TabItemPanel>
++  );
++}
+diff --git a/packages/docusaurus-theme-classic/src/theme/Tabs/index.tsx b/packages/docusaurus-theme-classic/src/theme/Tabs/index.tsx
+index 878744add..89393dfc3 100644
+--- a/packages/docusaurus-theme-classic/src/theme/Tabs/index.tsx
++++ b/packages/docusaurus-theme-classic/src/theme/Tabs/index.tsx
+@@ -5,26 +5,23 @@
+  * LICENSE file in the root directory of this source tree.
+  */
+
+-import React, {cloneElement, type ReactElement, type ReactNode} from 'react';
++import React, {type ReactNode} from 'react';
+ import clsx from 'clsx';
+ import {ThemeClassNames} from '@docusaurus/theme-common';
+ import {
+   useScrollPositionBlocker,
++  useTabsContextValue,
+   useTabs,
+   sanitizeTabsChildren,
+-  type TabItemProps,
++  TabsProvider,
+ } from '@docusaurus/theme-common/internal';
+ import useIsBrowser from '@docusaurus/useIsBrowser';
+ import type {Props} from '@theme/Tabs';
+ import styles from './styles.module.css';
+
+-function TabList({
+-  className,
+-  block,
+-  selectedValue,
+-  selectValue,
+-  tabValues,
+-}: Props & ReturnType<typeof useTabs>) {
++function TabList({className}: {className?: string}) {
++  const {selectedValue, selectValue, tabValues, block} = useTabs();
++
+   const tabRefs: (HTMLLIElement | null)[] = [];
+   const {blockElementScrollPositionUntilNextRender} =
+     useScrollPositionBlocker();
+@@ -88,8 +85,8 @@ function TabList({
+           tabIndex={selectedValue === value ? 0 : -1}
+           aria-selected={selectedValue === value}
+           key={value}
+-          ref={(tabControl) => {
+-            tabRefs.push(tabControl);
++          ref={(ref) => {
++            tabRefs.push(ref);
+           }}
+           onKeyDown={handleKeydown}
+           onClick={handleTabChange}
+@@ -109,40 +106,17 @@ function TabList({
+   );
+ }
+
+-function TabContent({
+-  lazy,
+-  children,
+-  selectedValue,
+-}: Props & ReturnType<typeof useTabs>) {
+-  const childTabs = (Array.isArray(children) ? children : [children]).filter(
+-    Boolean,
+-  ) as ReactElement<TabItemProps>[];
+-  if (lazy) {
+-    const selectedTabItem = childTabs.find(
+-      (tabItem) => tabItem.props.value === selectedValue,
+-    );
+-    if (!selectedTabItem) {
+-      // fail-safe or fail-fast? not sure what's best here
+-      return null;
+-    }
+-    return cloneElement(selectedTabItem, {
+-      className: clsx('margin-top--md', selectedTabItem.props.className),
+-    });
+-  }
+-  return (
+-    <div className="margin-top--md">
+-      {childTabs.map((tabItem, i) =>
+-        cloneElement(tabItem, {
+-          key: i,
+-          hidden: tabItem.props.value !== selectedValue,
+-        }),
+-      )}
+-    </div>
+-  );
++function TabContent({children}: {children: ReactNode}) {
++  return <div className="margin-top--md">{children}</div>;
+ }
+
+-function TabsComponent(props: Props): ReactNode {
+-  const tabs = useTabs(props);
++function TabsContainer({
++  className,
++  children,
++}: {
++  className?: string;
++  children: ReactNode;
++}): ReactNode {
+   return (
+     <div
+       className={clsx(
+@@ -152,21 +126,28 @@ function TabsComponent(props: Props): ReactNode {
+         'tabs-container',
+         styles.tabList,
+       )}>
+-      <TabList {...tabs} {...props} />
+-      <TabContent {...tabs} {...props} />
++      <TabList
++        // Surprising but historical
++        // className is applied on TabList, not on TabsContainer
++        className={className}
++      />
++      <TabContent>{children}</TabContent>
+     </div>
+   );
+ }
+
+ export default function Tabs(props: Props): ReactNode {
+   const isBrowser = useIsBrowser();
++  const value = useTabsContextValue(props);
+   return (
+-    <TabsComponent
++    <TabsProvider
++      value={value}
+       // Remount tabs after hydration
+       // Temporary fix for https://github.com/facebook/docusaurus/issues/5653
+-      key={String(isBrowser)}
+-      {...props}>
+-      {sanitizeTabsChildren(props.children)}
+-    </TabsComponent>
++      key={String(isBrowser)}>
++      <TabsContainer className={props.className}>
++        {sanitizeTabsChildren(props.children)}
++      </TabsContainer>
++    </TabsProvider>
+   );
+ }
+diff --git a/packages/docusaurus-theme-common/src/internal.ts b/packages/docusaurus-theme-common/src/internal.ts
+index ffb15d78e..9d8b904cd 100644
+--- a/packages/docusaurus-theme-common/src/internal.ts
++++ b/packages/docusaurus-theme-common/src/internal.ts
+@@ -23,7 +23,12 @@ export {
+   useAnnouncementBar,
+ } from './contexts/announcementBar';
+
+-export {useTabs, sanitizeTabsChildren} from './utils/tabsUtils';
++export {
++  sanitizeTabsChildren,
++  TabsProvider,
++  useTabs,
++  useTabsContextValue,
++} from './utils/tabsUtils';
+ export type {TabValue, TabsProps, TabItemProps} from './utils/tabsUtils';
+
+ export {useNavbarMobileSidebar} from './contexts/navbarMobileSidebar';
+diff --git a/packages/docusaurus-theme-common/src/utils/tabsUtils.tsx b/packages/docusaurus-theme-common/src/utils/tabsUtils.tsx
+index 6757868e0..931d379eb 100644
+--- a/packages/docusaurus-theme-common/src/utils/tabsUtils.tsx
++++ b/packages/docusaurus-theme-common/src/utils/tabsUtils.tsx
+@@ -10,6 +10,8 @@ import React, {
+   useCallback,
+   useState,
+   useMemo,
++  createContext,
++  use,
+   type ReactNode,
+   type ReactElement,
+ } from 'react';
+@@ -29,12 +31,10 @@ export interface TabValue {
+   readonly default?: boolean;
+ }
+
+-type TabItem = ReactElement<TabItemProps> | null | false | undefined;
+-
+ export interface TabsProps {
+   readonly lazy?: boolean;
+   readonly block?: boolean;
+-  readonly children: TabItem[] | TabItem;
++  readonly children: ReactNode;
+   readonly defaultValue?: string | null;
+   readonly values?: readonly TabValue[];
+   readonly groupId?: string;
+@@ -47,41 +47,45 @@ export interface TabItemProps {
+   readonly value: string;
+   readonly default?: boolean;
+   readonly label?: string;
+-  readonly hidden?: boolean;
+   readonly className?: string;
+   readonly attributes?: {[key: string]: unknown};
+ }
+
+-// A very rough duck type, but good enough to guard against mistakes while
+-// allowing customization
+-function isTabItem(
+-  comp: ReactElement<unknown>,
+-): comp is ReactElement<TabItemProps> {
+-  const {props} = comp;
+-  return !!props && typeof props === 'object' && 'value' in props;
++export function sanitizeTabsChildren(children: ReactNode): ReactNode {
++  return React.Children.toArray(children).filter((child) => child !== '\n');
+ }
+
+-export function sanitizeTabsChildren(children: TabsProps['children']) {
+-  return (React.Children.toArray(children)
+-    .filter((child) => child !== '\n')
+-    .map((child) => {
+-      if (!child || (isValidElement(child) && isTabItem(child))) {
+-        return child;
+-      }
+-      // child.type.name will give non-sensical values in prod because of
+-      // minification, but we assume it won't throw in prod.
+-      throw new Error(
+-        `Docusaurus error: Bad <Tabs> child <${
+-          // @ts-expect-error: guarding against unexpected cases
+-          typeof child.type === 'string' ? child.type : child.type.name
+-        }>: all children of the <Tabs> component should be <TabItem>, and every <TabItem> should have a unique "value" prop.`,
+-      );
+-    })
+-    ?.filter(Boolean) ?? []) as ReactElement<TabItemProps>[];
+-}
++function extractChildrenTabValues(children: ReactNode): TabValue[] {
++  // ✅ <TabItem value="red"/> => true
++  // ✅ <CustomTabItem value="red"/> => true
++  // ❌ <RedTabItem value="tab-value"/> => requires <Tabs values> prop
++  function isTabItemWithValueProp(
++    comp: ReactElement,
++  ): comp is ReactElement<TabItemProps> {
++    const {props} = comp;
++    return !!props && typeof props === 'object' && 'value' in props;
++  }
+
+-function extractChildrenTabValues(children: TabsProps['children']): TabValue[] {
+-  return sanitizeTabsChildren(children).map(
++  const elements = React.Children.toArray(children).flatMap((child) => {
++    // Historical case, not sure when it happens, do we really need this?
++    if (!child) {
++      return [];
++    }
++    if (isValidElement(child) && isTabItemWithValueProp(child)) {
++      return [child];
++    }
++    // child.type.name will give non-sensical values in prod because of
++    // minification, but we assume it won't throw in prod.
++    const badChildTypeName =
++      // @ts-expect-error: guarding against unexpected cases
++      typeof child.type === 'string' ? child.type : child.type.name;
++    throw new Error(
++      `Docusaurus error: Bad <Tabs> child <${badChildTypeName}>: all children of the <Tabs> component should be <TabItem>, and every <TabItem> should have a unique "value" prop.
++If you do not want to pass on a "value" prop to the direct children of <Tabs>, you can also pass an explicit <Tabs values={...}> prop.`,
++    );
++  });
++
++  return elements.map(
+     ({props: {value, label, attributes, default: isDefault}}) => ({
+       value,
+       label,
+@@ -96,7 +100,7 @@ function ensureNoDuplicateValue(values: readonly TabValue[]) {
+   if (dup.length > 0) {
+     throw new Error(
+       `Docusaurus error: Duplicate values "${dup
+-        .map((a) => a.value)
++        .map((a) => `'${a.value}'`)
+         .join(', ')}" found in <Tabs>. Every value needs to be unique.`,
+     );
+   }
+@@ -221,11 +225,18 @@ function useTabStorage({groupId}: Pick<TabsProps, 'groupId'>) {
+   return [value, setValue] as const;
+ }
+
+-export function useTabs(props: TabsProps): {
++type TabsContextValue = {
+   selectedValue: string;
+   selectValue: (value: string) => void;
+   tabValues: readonly TabValue[];
+-} {
++  lazy: boolean;
++  // TODO Docusaurus v4: remove this "block" concept?
++  //  TIL about it, and afaik we never used nor documented it
++  //  See https://infima.dev/docs/components/tabs#block
++  block: boolean;
++};
++
++export function useTabsContextValue(props: TabsProps): TabsContextValue {
+   const {defaultValue, queryString = false, groupId} = props;
+   const tabValues = useTabValues(props);
+
+@@ -270,5 +281,32 @@ export function useTabs(props: TabsProps): {
+     [setQueryString, setStorageValue, tabValues],
+   );
+
+-  return {selectedValue, selectValue, tabValues};
++  return {
++    selectedValue,
++    selectValue,
++    tabValues,
++    lazy: props.lazy ?? false,
++    block: props.block ?? false,
++  };
++}
++
++const TabsContext = createContext<TabsContextValue | null>(null);
++
++export function useTabs(): TabsContextValue {
++  const contextValue = use(TabsContext);
++  if (!contextValue) {
++    throw new Error('useTabsContext() must be used within a Tabs component');
++  }
++  return contextValue;
++}
++
++export function TabsProvider(props: {
++  children: ReactNode;
++  value: TabsContextValue;
++}): ReactNode {
++  return (
++    <TabsContext value={props.value}>
++      {props.children}
++    </TabsContext>
++  );
+ }

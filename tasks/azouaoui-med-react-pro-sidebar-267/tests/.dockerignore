@@ -1,0 +1,10 @@
+harness/node_modules
+harness/.pnpm-store
+harness/.vite-cache
+harness/.vite
+harness/.coverage-v8
+harness/coverage
+harness/coverage-report
+harness/test-results
+harness/playwright-report
+harness/dist

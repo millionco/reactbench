@@ -1,0 +1,150 @@
+diff --git a/apps/web/components/PlayPage/GeometryOverlay.tsx b/apps/web/components/PlayPage/GeometryOverlay.tsx
+index fc43841..480bb4f 100644
+--- a/apps/web/components/PlayPage/GeometryOverlay.tsx
++++ b/apps/web/components/PlayPage/GeometryOverlay.tsx
+@@ -3 +3 @@
+-import type { CSSProperties, RefObject } from "react";
++import { useCallback, useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
+@@ -18,0 +19,7 @@ interface Props {
++  /** Re-run extraction for THIS node (one VLM call, ~$0.01). Wired by the
++   *  page; when present the empty state becomes a "localize now" button —
++   *  extraction only fires automatically right after a page generates, so an
++   *  old/failed node would otherwise stay box-less forever. */
++  onLocalize?: ((signal: AbortSignal) => void | Promise<void>) | undefined;
++  /** The current localize attempt for this node (page-held state). */
++  localizeStatus?: "running" | "failed" | undefined;
+@@ -27,0 +35,82 @@ const KIND_COLOR: Record<string, string> = {
++interface LocalizationEmptyStateProps {
++  onLocalize?: (() => void | Promise<void>) | undefined;
++  status?: "running" | "failed" | undefined;
++}
++
++interface LocalizationAttemptState {
++  callbackGeneration: number;
++  phase: "pending" | "failed";
++}
++
++function LocalizationEmptyState({ onLocalize, status }: LocalizationEmptyStateProps) {
++  const callbackBoundaryRef = useRef({ callback: onLocalize, generation: 0 });
++  if (callbackBoundaryRef.current.callback !== onLocalize) {
++    callbackBoundaryRef.current = {
++      callback: onLocalize,
++      generation: callbackBoundaryRef.current.generation + 1,
++    };
++  }
++  const callbackGeneration = callbackBoundaryRef.current.generation;
++  const activeGenerationRef = useRef<number | null>(null);
++  const [attemptState, setAttemptState] = useState<LocalizationAttemptState | null>(null);
++  const currentAttempt = attemptState?.callbackGeneration === callbackGeneration
++    ? attemptState
++    : null;
++
++  const handleLocalize = () => {
++    if (!onLocalize || activeGenerationRef.current === callbackGeneration) return;
++    activeGenerationRef.current = callbackGeneration;
++    setAttemptState({ callbackGeneration, phase: "pending" });
++
++    let result: void | Promise<void>;
++    try {
++      result = onLocalize();
++    } catch {
++      if (activeGenerationRef.current === callbackGeneration) {
++        activeGenerationRef.current = null;
++        setAttemptState({ callbackGeneration, phase: "failed" });
++      }
++      return;
++    }
++
++    if (result) {
++      void result.then(
++        () => {
++          if (activeGenerationRef.current !== callbackGeneration) return;
++          activeGenerationRef.current = null;
++          setAttemptState(null);
++        },
++        () => {
++          if (activeGenerationRef.current !== callbackGeneration) return;
++          activeGenerationRef.current = null;
++          setAttemptState({ callbackGeneration, phase: "failed" });
++        },
++      );
++    }
++  };
++
++  if (status === "running") {
++    return <span data-testid="geo-localizing">localizing…</span>;
++  }
++  if (status === "failed" && !onLocalize) {
++    return <span>nothing localized for this page</span>;
++  }
++  if (!onLocalize) {
++    return <span>no localized geometry for this page</span>;
++  }
++
++  return (
++    <button
++      type="button"
++      data-testid="geo-localize"
++      onClick={handleLocalize}
++      disabled={currentAttempt?.phase === "pending"}
++      className="underline decoration-dotted underline-offset-2 hover:text-emerald-300"
++    >
++      {status === "failed" || currentAttempt?.phase === "failed"
++        ? "nothing localized — retry"
++        : "no localized geometry — localize now"}
++    </button>
++  );
++}
++
+@@ -36,0 +126,2 @@ export default function GeometryOverlay({
++  onLocalize,
++  localizeStatus,
+@@ -54,0 +146,37 @@ export default function GeometryOverlay({
++  const hasDrawableGeometry = boxes.length > 0;
++  const activeLocalizationControllerRef = useRef<AbortController | null>(null);
++  useLayoutEffect(() => () => {
++    activeLocalizationControllerRef.current?.abort();
++    activeLocalizationControllerRef.current = null;
++  }, [nodeId, onLocalize, hasDrawableGeometry]);
++  const requestLocalization = useCallback(() => {
++    if (!onLocalize) return;
++    activeLocalizationControllerRef.current?.abort();
++    const controller = new AbortController();
++    activeLocalizationControllerRef.current = controller;
++
++    let result: void | Promise<void>;
++    try {
++      result = onLocalize(controller.signal);
++    } catch (error) {
++      if (activeLocalizationControllerRef.current === controller) {
++        activeLocalizationControllerRef.current = null;
++      }
++      throw error;
++    }
++
++    if (!result) return;
++    return Promise.resolve(result).then(
++      () => {
++        if (activeLocalizationControllerRef.current === controller) {
++          activeLocalizationControllerRef.current = null;
++        }
++      },
++      (error: unknown) => {
++        if (activeLocalizationControllerRef.current === controller) {
++          activeLocalizationControllerRef.current = null;
++        }
++        throw error;
++      },
++    );
++  }, [onLocalize]);
+@@ -102,2 +230,8 @@ export default function GeometryOverlay({
+-        <div className="absolute bottom-1 left-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
+-          no localized geometry for this page
++        // bottom-RIGHT: bottom-left is the Pin-style chip's spot (the audit's
++        // overlap bug). pointer-events-auto only here — boxes stay transparent.
++        <div className="pointer-events-auto absolute bottom-1 right-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
++          <LocalizationEmptyState
++            key={`${nodeId}:${localizeStatus ?? "idle"}`}
++            onLocalize={onLocalize ? requestLocalization : undefined}
++            status={localizeStatus}
++          />

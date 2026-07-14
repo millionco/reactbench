@@ -1,0 +1,456 @@
+diff --git a/apps/web/app/routes/examples/chakra-ui.tsx b/apps/web/app/routes/examples/chakra-ui.tsx
+index c2845537..6975de1b 100644
+--- a/apps/web/app/routes/examples/chakra-ui.tsx
++++ b/apps/web/app/routes/examples/chakra-ui.tsx
+@@ -22,7 +22,7 @@ import type { Route } from './+types/chakra-ui'
+ 
+ const title = 'Chakra UI'
+ const description =
+-  'In this example, we show how makeSchemaForm enables type-safe integration with UI libraries like Chakra UI.'
++  'In this example, we show how makeSchemaForm enables type-safe integration with UI libraries like Chakra UI. Field accepts the same type-safe props as SmartInput — no children render prop needed for simple cases.'
+ 
+ export const meta: Route.MetaFunction = () => metaTags({ title, description })
+ 
+@@ -43,29 +43,19 @@ const schema = z.object({
+ })
+ 
+ export default () => (
+-  <SchemaForm schema={schema} multiline={['bio']} radio={['role']}>
++  <SchemaForm
++    schema={schema}
++    multiline={['bio']}
++    radio={['role']}
++    labels={{ firstName: 'First name', email: 'Email address' }}
++  >
+     {({ Field, Errors, Button }) => (
+       <>
+-        <Field name="firstName">
+-          {({ Label, SmartInput, Errors }) => (
+-            <>
+-              <Label>First name</Label>
+-              {/* SmartInput knows this is an input field — accepts ChakraInput props */}
+-              <SmartInput size="lg" />
+-              <Errors />
+-            </>
+-          )}
+-        </Field>
+-        <Field name="email">
+-          {({ Label, SmartInput, Errors }) => (
+-            <>
+-              <Label>Email address</Label>
+-              {/* SmartInput infers input slot — variant is a ChakraInput prop */}
+-              <SmartInput variant="filled" />
+-              <Errors />
+-            </>
+-          )}
+-        </Field>
++        {/* size is a ChakraInput prop — no children needed */}
++        <Field name="firstName" size="lg" />
++        {/* variant on the input + className on the wrapper via fieldProps */}
++        <Field name="email" variant="filled" fieldProps={{ className: 'col-span-full' }} />
++        {/* Children render prop still works for custom layouts */}
+         <Field name="password" type="password">
+           {({ Label, SmartInput, Errors }) => (
+             <>
+@@ -75,22 +65,22 @@ export default () => (
+             </>
+           )}
+         </Field>
+-        <Field name="bio">
++        {/* resize on Field is forwarded to SmartInput; size on SmartInput composes */}
++        <Field name="bio" resize="none">
+           {({ Label, SmartInput, Errors }) => (
+             <>
+               <Label>Bio</Label>
+-              {/* SmartInput knows bio is multiline — accepts ChakraTextarea props */}
+-              <SmartInput resize="none" />
++              <SmartInput size="lg" />
+               <Errors />
+             </>
+           )}
+         </Field>
++        {/* Children render prop for custom radio layout */}
+         <Field name="role">
+-          {({ Label, SmartInput, RadioGroup, Errors }) => (
++          {({ Label, RadioGroup, SmartInput, Errors }) => (
+             <>
+               <Label>Role</Label>
+               <RadioGroup>
+-                {/* SmartInput knows role is radio (enum in radio config) */}
+                 <SmartInput />
+               </RadioGroup>
+               <Errors />
+@@ -261,9 +251,8 @@ export default function Component() {
+           In this example, we show how <em>makeSchemaForm</em> enables type-safe
+           integration with UI libraries like{' '}
+           <ExternalLink href="https://chakra-ui.com/">Chakra UI</ExternalLink>.
+-          SmartInput automatically infers which component it will render from
+-          the schema and form config, giving you the exact props of that
+-          component.
++          Field accepts the same type-safe props as SmartInput — no children
++          render prop needed for simple cases.
+         </>
+       }
+     >
+@@ -272,28 +261,17 @@ export default function Component() {
+         multiline={['bio']}
+         radio={['role']}
+         inputTypes={{ password: 'password' }}
++        labels={{ firstName: 'First name', email: 'Email address' }}
+         buttonLabel="Sign up"
+       >
+         {({ Field, Errors, Button }) => (
+           <>
+-            <Field name="firstName">
+-              {({ Label, SmartInput, Errors }) => (
+-                <>
+-                  <Label>First name</Label>
+-                  <SmartInput size="lg" />
+-                  <Errors />
+-                </>
+-              )}
+-            </Field>
+-            <Field name="email">
+-              {({ Label, SmartInput, Errors }) => (
+-                <>
+-                  <Label>Email address</Label>
+-                  <SmartInput variant="filled" />
+-                  <Errors />
+-                </>
+-              )}
+-            </Field>
++            <Field name="firstName" size="lg" />
++            <Field
++              name="email"
++              variant="filled"
++              fieldProps={{ className: 'col-span-full' }}
++            />
+             <Field name="password" type="password">
+               {({ Label, SmartInput, Errors }) => (
+                 <>
+@@ -303,17 +281,17 @@ export default function Component() {
+                 </>
+               )}
+             </Field>
+-            <Field name="bio">
++            <Field name="bio" resize="none">
+               {({ Label, SmartInput, Errors }) => (
+                 <>
+                   <Label>Bio</Label>
+-                  <SmartInput resize="none" />
++                  <SmartInput size="lg" />
+                   <Errors />
+                 </>
+               )}
+             </Field>
+             <Field name="role">
+-              {({ Label, SmartInput, RadioGroup, Errors }) => (
++              {({ Label, RadioGroup, SmartInput, Errors }) => (
+                 <>
+                   <Label>Role</Label>
+                   <RadioGroup>
+diff --git a/apps/web/app/routes/examples/field-layout.tsx b/apps/web/app/routes/examples/field-layout.tsx
+index 27526170..ba77140e 100644
+--- a/apps/web/app/routes/examples/field-layout.tsx
++++ b/apps/web/app/routes/examples/field-layout.tsx
+@@ -25,12 +25,12 @@ export default () => (
+     {({ Field, Errors, Button }) => (
+       <>
+         <div className="flex gap-4">
+-          <Field name="street" className="flex-[3]" />
+-          <Field name="number" className="flex-[1]" />
++          <Field name="street" fieldProps={{ className: "flex-[3]" }} />
++          <Field name="number" fieldProps={{ className: "flex-[1]" }} />
+         </div>
+         <Field name="extendedAddress" />
+         <div className="flex gap-4">
+-          <Field name="city" className="flex-1" />
++          <Field name="city" fieldProps={{ className: "flex-1" }} />
+           <Field name="state" />
+         </div>
+         <Errors />
+@@ -64,12 +64,12 @@ export default function Component() {
+         {({ Field, Errors, Button }) => (
+           <>
+             <div className="flex gap-4">
+-              <Field name="street" className="flex-[3]" />
+-              <Field name="number" className="flex-[1]" />
++              <Field name="street" fieldProps={{ className: 'flex-[3]' }} />
++              <Field name="number" fieldProps={{ className: 'flex-[1]' }} />
+             </div>
+             <Field name="extendedAddress" />
+             <div className="flex gap-4">
+-              <Field name="city" className="flex-1" />
++              <Field name="city" fieldProps={{ className: 'flex-1' }} />
+               <Field name="state" />
+             </div>
+             <Errors />
+diff --git a/apps/web/app/routes/examples/imperative-submit.tsx b/apps/web/app/routes/examples/imperative-submit.tsx
+index f107302e..cd1f2033 100644
+--- a/apps/web/app/routes/examples/imperative-submit.tsx
++++ b/apps/web/app/routes/examples/imperative-submit.tsx
+@@ -21,8 +21,10 @@ export default () => (
+       <>
+         <Field
+           name="token"
+-          onChange={(ev: React.ChangeEvent<HTMLInputElement>) => {
+-            if (ev.target.value.length === 4) submit()
++          fieldProps={{
++            onChange: (ev: React.ChangeEvent<HTMLInputElement>) => {
++              if (ev.target.value.length === 4) submit()
++            },
+           }}
+         />
+         <Errors />
+@@ -53,8 +55,10 @@ export default function Component() {
+             <Field
+               name="token"
+               placeholder="Type 4 digits"
+-              onChange={(ev: React.ChangeEvent<HTMLInputElement>) => {
+-                if (ev.target.value.length === 4) submit()
++              fieldProps={{
++                onChange: (ev: React.ChangeEvent<HTMLInputElement>) => {
++                  if (ev.target.value.length === 4) submit()
++                },
+               }}
+             />
+             <Errors />
+diff --git a/apps/web/app/routes/examples/use-fetcher.tsx b/apps/web/app/routes/examples/use-fetcher.tsx
+index 52cf819b..a1bf6ab4 100644
+--- a/apps/web/app/routes/examples/use-fetcher.tsx
++++ b/apps/web/app/routes/examples/use-fetcher.tsx
+@@ -53,7 +53,7 @@ export default () => {
+           <div className="flex justify-end gap-2">
+             <Field
+               name="name"
+-              className="flex-1 flex-col gap-2"
++              fieldProps={{ className: "flex-1 flex-col gap-2" }}
+               placeholder="Add to-do"
+               autoFocus
+             >
+@@ -116,7 +116,7 @@ export default function Component() {
+             <div className="flex justify-end gap-2">
+               <Field
+                 name="name"
+-                className="flex-1 flex-col gap-2"
++                fieldProps={{ className: 'flex-1 flex-col gap-2' }}
+                 placeholder="Add to-do"
+                 autoFocus
+               >
+diff --git a/packages/remix-forms/src/component-types.test-d.ts b/packages/remix-forms/src/component-types.test-d.ts
+index 843f3a8f..6df02762 100644
+--- a/packages/remix-forms/src/component-types.test-d.ts
++++ b/packages/remix-forms/src/component-types.test-d.ts
+@@ -547,7 +547,7 @@ it('StripDefaultProps removes defaultChecked from resolved Radio', () => {
+   expectTypeOf<PropsOf<StrippedRadio>>().not.toHaveProperty('defaultChecked')
+ })
+ 
+-// --- FieldComponent wrapper props inference ---
++// --- PropsOf with forwardRef ---
+ 
+ it('PropsOf extracts props from a forwardRef component', () => {
+   type MyRef = React.ForwardRefExoticComponent<
+@@ -558,31 +558,65 @@ it('PropsOf extracts props from a forwardRef component', () => {
+   expectTypeOf<PropsOf<MyRef>>().toHaveProperty('color')
+ })
+ 
+-it('FieldComponent with default components accepts field wrapper props', () => {
++// --- FieldComponent inferred SmartInput props ---
++
++it('Field accepts type prop (from SmartInput inferred)', () => {
+   const schema = z.object({ name: z.string() })
+   type S = typeof schema
+   type Resolved = ResolveComponents<Record<never, never>>
+   type FC = FieldComponent<S, Resolved, readonly [], readonly [], readonly []>
+   type Props = Parameters<FC>[0]
+-  expectTypeOf<Props>().toHaveProperty('className')
++  expectTypeOf<Props>().toHaveProperty('type')
+ })
+ 
+-it('FieldComponent with custom field component accepts custom wrapper props', () => {
+-  type CustomField = React.FC<{
+-    hidden?: boolean
+-    style?: React.CSSProperties
+-    children?: React.ReactNode
+-    variant?: 'outlined' | 'filled'
+-  }>
++it('Field accepts autoComplete prop (from SmartInput inferred)', () => {
+   const schema = z.object({ name: z.string() })
+   type S = typeof schema
+-  type Resolved = MergeComponents<{ field: CustomField }, NoOverrides>
++  type Resolved = ResolveComponents<Record<never, never>>
++  type FC = FieldComponent<S, Resolved, readonly [], readonly [], readonly []>
++  type Props = Parameters<FC>[0]
++  expectTypeOf<Props>().toHaveProperty('autoComplete')
++})
++
++it('Field does not accept registerProps (internal)', () => {
++  const schema = z.object({ name: z.string() })
++  type S = typeof schema
++  type Resolved = ResolveComponents<Record<never, never>>
++  type FC = FieldComponent<S, Resolved, readonly [], readonly [], readonly []>
++  type Props = Parameters<FC>[0]
++  expectTypeOf<Props>().not.toHaveProperty('registerProps')
++})
++
++it('Field does not accept a11yProps (internal)', () => {
++  const schema = z.object({ name: z.string() })
++  type S = typeof schema
++  type Resolved = ResolveComponents<Record<never, never>>
++  type FC = FieldComponent<S, Resolved, readonly [], readonly [], readonly []>
++  type Props = Parameters<FC>[0]
++  expectTypeOf<Props>().not.toHaveProperty('a11yProps')
++})
++
++it('Field does not accept className (internal)', () => {
++  const schema = z.object({ name: z.string() })
++  type S = typeof schema
++  type Resolved = ResolveComponents<Record<never, never>>
+   type FC = FieldComponent<S, Resolved, readonly [], readonly [], readonly []>
+   type Props = Parameters<FC>[0]
+-  expectTypeOf<Props>().toHaveProperty('variant')
++  expectTypeOf<Props>().not.toHaveProperty('className')
++})
++
++// --- fieldProps wrapper prop inference ---
++
++it('fieldProps accepts wrapper component props', () => {
++  const schema = z.object({ name: z.string() })
++  type S = typeof schema
++  type Resolved = ResolveComponents<Record<never, never>>
++  type FC = FieldComponent<S, Resolved, readonly [], readonly [], readonly []>
++  type Props = Parameters<FC>[0]
++  expectTypeOf<Props>().toHaveProperty('fieldProps')
+ })
+ 
+-it('FieldComponent with custom field component rejects div-only props', () => {
++it('fieldProps with custom field component accepts custom wrapper props', () => {
+   type CustomField = React.FC<{
+     hidden?: boolean
+     style?: React.CSSProperties
+@@ -594,5 +628,7 @@ it('FieldComponent with custom field component rejects div-only props', () => {
+   type Resolved = MergeComponents<{ field: CustomField }, NoOverrides>
+   type FC = FieldComponent<S, Resolved, readonly [], readonly [], readonly []>
+   type Props = Parameters<FC>[0]
+-  expectTypeOf<Props>().not.toHaveProperty('className')
++  type FieldPropsType = NonNullable<Props['fieldProps']>
++  expectTypeOf<FieldPropsType>().toHaveProperty('variant')
++  expectTypeOf<FieldPropsType>().not.toHaveProperty('className')
+ })
+diff --git a/packages/remix-forms/src/create-field.tsx b/packages/remix-forms/src/create-field.tsx
+index d0e327db..d1b11f94 100644
+--- a/packages/remix-forms/src/create-field.tsx
++++ b/packages/remix-forms/src/create-field.tsx
+@@ -80,16 +80,23 @@ type FieldBaseProps<
+   H extends boolean | undefined,
+ > = Omit<
+   Partial<Field<Infer<Schema>>>,
+-  'name' | 'multiline' | 'radio' | 'hidden'
++  'name' | 'multiline' | 'radio' | 'hidden' | 'autoComplete'
+ > & {
+   name: Name
+   multiline?: M
+   radio?: R
+   hidden?: H
+-  type?: JSX.IntrinsicElements['input']['type']
+   children?: Children<Schema, Resolved, Multiline, Radio, Hidden, Name, M, R, H>
++  fieldProps?: Omit<PropsOf<Resolved['field']>, 'children'>
+ }
+ 
++type SmartInputInternalKeys =
++  | 'registerProps'
++  | 'a11yProps'
++  | 'className'
++  | 'defaultValue'
++  | 'defaultChecked'
++
+ type FieldProps<
+   Schema extends FormSchema,
+   // biome-ignore lint/suspicious/noExplicitAny: resolved map varies per call site
+@@ -102,7 +109,21 @@ type FieldProps<
+   R extends boolean | undefined,
+   H extends boolean | undefined,
+ > = FieldBaseProps<Schema, Resolved, Multiline, Radio, Hidden, Name, M, R, H> &
+-  Omit<PropsOf<Resolved['field']>, 'children'>
++  Omit<
++    SmartInputProps<Schema, Resolved, Multiline, Radio, Hidden, Name, M, R, H>,
++    | keyof FieldBaseProps<
++        Schema,
++        Resolved,
++        Multiline,
++        Radio,
++        Hidden,
++        Name,
++        M,
++        R,
++        H
++      >
++    | SmartInputInternalKeys
++  >
+ 
+ type FieldComponent<
+   Schema extends FormSchema,
+@@ -407,7 +428,8 @@ function createField<
+         hidden = false,
+         autoComplete,
+         children: childrenFn,
+-        ...props
++        fieldProps,
++        ...smartInputExtra
+       }: // biome-ignore lint/suspicious/noExplicitAny: internal implementation — generics are for the external API
+       Record<string, any>,
+       ref
+@@ -434,7 +456,10 @@ function createField<
+         ? errors.map((error: string) => <Error key={error}>{error}</Error>)
+         : undefined
+ 
+-      const style = hidden ? { display: 'none' } : undefined
++      const { style: userStyle, ...restFieldProps } = fieldProps ?? {}
++      const mergedStyle = hidden
++        ? { display: 'none' as const, ...userStyle }
++        : userStyle
+       const type =
+         typeProp ?? (hidden ? 'hidden' : getInputType(fieldType, radio))
+ 
+@@ -528,6 +553,7 @@ function createField<
+               ...smartChildProps
+             } = child.props
+             return React.cloneElement(child, {
++              ...smartInputExtra,
+               ...smartInputProps,
+               ...smartChildProps,
+             })
+@@ -645,7 +671,7 @@ function createField<
+ 
+         return (
+           <FieldContext.Provider value={field}>
+-            <Field hidden={hidden} style={style} {...props}>
++            <Field hidden={hidden} style={mergedStyle} {...restFieldProps}>
+               {children}
+             </Field>
+           </FieldContext.Provider>
+@@ -665,12 +691,13 @@ function createField<
+           autoComplete={autoComplete}
+           value={value}
+           a11yProps={a11yProps}
++          {...smartInputExtra}
+         />
+       )
+ 
+       return (
+         <FieldContext.Provider value={field}>
+-          <Field hidden={hidden} style={style} {...props}>
++          <Field hidden={hidden} style={mergedStyle} {...restFieldProps}>
+             {fieldType === 'boolean' ? (
+               <CheckboxLabel id={labelId}>
+                 {smartInput}
+@@ -705,7 +732,9 @@ export type {
+   FieldType,
+   FieldComponent,
+   Option,
++  SmartInputProps,
+   SmartInputSlot,
++  SmartInputInternalKeys,
+   StripDefaultProps,
+   IsBoolean,
+   IsEnum,

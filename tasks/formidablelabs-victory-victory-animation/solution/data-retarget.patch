@@ -1,0 +1,55 @@
+--- a/packages/victory-core/src/victory-animation/victory-animation.tsx
++++ b/packages/victory-core/src/victory-animation/victory-animation.tsx
+@@ -127,6 +127,7 @@
+   const traverseQueueRef = React.useRef<() => void>(() => {});
+   const onDataChangeRef = React.useRef<() => void>(() => {});
+   const startRef = React.useRef<() => void>(() => {});
++  const didProcessInitialData = React.useRef(false);
+
+   traverseQueueRef.current = () => {
+     const { delay: currentDelay, duration: currentDuration } =
+@@ -198,30 +199,10 @@
+   };
+
+   onDataChangeRef.current = () => {
+-    const { state: currentState, data: currentData } = latestRef.current;
+-    // If the previous animation didn't finish, force it to complete before
+-    // starting a new one.
+-    if (
+-      interpolator.current &&
+-      currentState.animationInfo &&
+-      currentState.animationInfo.progress < 1
+-    ) {
+-      setState({
+-        data: interpolator.current(1),
+-        animationInfo: {
+-          progress: 1,
+-          animating: false,
+-          terminating: true,
+-        },
+-      });
+-    } else {
+-      // Cancel existing loop if it exists
+-      timer.unsubscribe(loopID.current);
+-      // Set the tween queue to the new data
+-      queue.current = Array.isArray(currentData) ? currentData : [currentData];
+-      // Start traversing the tween queue
+-      traverseQueueRef.current();
+-    }
++    const { data: currentData } = latestRef.current;
++    timer.unsubscribe(loopID.current);
++    queue.current = Array.isArray(currentData) ? currentData : [currentData];
++    traverseQueueRef.current();
+   };
+
+   startRef.current = () => {
+@@ -252,5 +233,9 @@
+   }, []);
+
+   React.useEffect(() => {
++    if (!didProcessInitialData.current) {
++      didProcessInitialData.current = true;
++      if (queue.current.length) return;
++    }
+     onDataChangeRef.current();
+   }, [data]);

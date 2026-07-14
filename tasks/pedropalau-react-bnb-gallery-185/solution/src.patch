@@ -1,0 +1,671 @@
+diff --git a/src/components/gallery.tsx b/src/components/gallery.tsx
+index 2276dfd..9c52e15 100644
+--- a/src/components/gallery.tsx
++++ b/src/components/gallery.tsx
+@@ -1 +1 @@
+-import type { TouchEvent } from 'react';
++import type { CSSProperties, MouseEvent, TouchEvent, WheelEvent } from 'react';
+@@ -8,0 +9 @@ import {
++	useRef,
+@@ -30,0 +32 @@ interface GalleryProps {
++	enableZoom?: boolean;
+@@ -31,0 +34 @@ interface GalleryProps {
++	maxZoom?: number;
+@@ -38,0 +42 @@ interface GalleryProps {
++	zoomStep?: number;
+@@ -45,0 +50,9 @@ interface TouchInfo {
++interface PinchInfo {
++	startDistance: number;
++	startScale: number;
++	startOffsetX: number;
++	startOffsetY: number;
++	startMidpointX: number;
++	startMidpointY: number;
++}
++
+@@ -50,0 +64,4 @@ interface GalleryState {
++	zoomScale: number;
++	zoomOffsetX: number;
++	zoomOffsetY: number;
++	isPanning: boolean;
+@@ -56,0 +74,43 @@ const EMPTY_PHOTOS: GalleryPhoto[] = [];
++const MIN_ZOOM = 1;
++
++function clampZoomOffset(
++	offsetX: number,
++	offsetY: number,
++	scale: number,
++	element: HTMLElement | null,
++	mediaElement: HTMLImageElement | null,
++) {
++	if (!element || !mediaElement || scale <= MIN_ZOOM) {
++		return { x: 0, y: 0 };
++	}
++
++	const viewportWidth = element.clientWidth;
++	const viewportHeight = element.clientHeight;
++	const intrinsicWidth = mediaElement.naturalWidth || mediaElement.clientWidth;
++	const intrinsicHeight =
++		mediaElement.naturalHeight || mediaElement.clientHeight;
++
++	if (
++		viewportWidth <= 0 ||
++		viewportHeight <= 0 ||
++		intrinsicWidth <= 0 ||
++		intrinsicHeight <= 0
++	) {
++		return { x: 0, y: 0 };
++	}
++
++	const containScale = Math.min(
++		viewportWidth / intrinsicWidth,
++		viewportHeight / intrinsicHeight,
++		1,
++	);
++	const renderedWidth = intrinsicWidth * containScale;
++	const renderedHeight = intrinsicHeight * containScale;
++	const maxX = Math.max(0, (renderedWidth * scale - viewportWidth) / 2);
++	const maxY = Math.max(0, (renderedHeight * scale - viewportHeight) / 2);
++
++	return {
++		x: Math.min(Math.max(offsetX, -maxX), maxX),
++		y: Math.min(Math.max(offsetY, -maxY), maxY),
++	};
++}
+@@ -99,0 +160 @@ const Gallery = forwardRef<GalleryController, GalleryProps>(function Gallery(
++		enableZoom = true,
+@@ -100,0 +162 @@ const Gallery = forwardRef<GalleryController, GalleryProps>(function Gallery(
++		maxZoom = 3,
+@@ -107,0 +170 @@ const Gallery = forwardRef<GalleryController, GalleryProps>(function Gallery(
++		zoomStep = 0.25,
+@@ -111,0 +175,5 @@ const Gallery = forwardRef<GalleryController, GalleryProps>(function Gallery(
++	const photoButtonRef = useRef<HTMLButtonElement | null>(null);
++	const photoImageRef = useRef<HTMLImageElement | null>(null);
++	const panStartRef = useRef({ x: 0, y: 0 });
++	const panOriginRef = useRef({ x: 0, y: 0 });
++	const pinchStartRef = useRef<PinchInfo | null>(null);
+@@ -126,0 +195,4 @@ const Gallery = forwardRef<GalleryController, GalleryProps>(function Gallery(
++			zoomScale: MIN_ZOOM,
++			zoomOffsetX: 0,
++			zoomOffsetY: 0,
++			isPanning: false,
+@@ -152,0 +225,3 @@ const Gallery = forwardRef<GalleryController, GalleryProps>(function Gallery(
++			const activePhotoChanged =
++				prevState.activePhotoIndex !== normalizedActivePhotoIndex;
++
+@@ -157,0 +233,8 @@ const Gallery = forwardRef<GalleryController, GalleryProps>(function Gallery(
++				...(activePhotoChanged
++					? {
++							zoomScale: MIN_ZOOM,
++							zoomOffsetX: 0,
++							zoomOffsetY: 0,
++							isPanning: false,
++						}
++					: null),
+@@ -165,0 +249 @@ const Gallery = forwardRef<GalleryController, GalleryProps>(function Gallery(
++
+@@ -203,0 +288,3 @@ const Gallery = forwardRef<GalleryController, GalleryProps>(function Gallery(
++				const activePhotoChanged =
++					prevState.activePhotoIndex !== nextElementIndex;
++
+@@ -208,0 +296,8 @@ const Gallery = forwardRef<GalleryController, GalleryProps>(function Gallery(
++					...(activePhotoChanged
++						? {
++								zoomScale: MIN_ZOOM,
++								zoomOffsetX: 0,
++								zoomOffsetY: 0,
++								isPanning: false,
++							}
++						: null),
+@@ -250,0 +346,3 @@ const Gallery = forwardRef<GalleryController, GalleryProps>(function Gallery(
++		if (enableZoom && state.zoomScale > MIN_ZOOM) {
++			return;
++		}
+@@ -253 +351,74 @@ const Gallery = forwardRef<GalleryController, GalleryProps>(function Gallery(
+-	}, [activePhotoPressed, move]);
++	}, [activePhotoPressed, enableZoom, move, state.zoomScale]);
++
++	const normalizedMaxZoom = Math.max(MIN_ZOOM, maxZoom);
++	const normalizedZoomStep = Math.max(0.1, zoomStep);
++	const isZoomMode = enableZoom && state.zoomScale > MIN_ZOOM;
++
++	const getTouchDistance = useCallback(
++		(
++			touchA: { clientX: number; clientY: number },
++			touchB: {
++				clientX: number;
++				clientY: number;
++			},
++		) => {
++			const deltaX = touchA.clientX - touchB.clientX;
++			const deltaY = touchA.clientY - touchB.clientY;
++			return Math.hypot(deltaX, deltaY);
++		},
++		[],
++	);
++
++	const setZoomScale = useCallback(
++		(nextScale: number, focalClientX?: number, focalClientY?: number) => {
++			setState((prevState) => {
++				const clampedScale = Math.min(
++					Math.max(nextScale, MIN_ZOOM),
++					normalizedMaxZoom,
++				);
++				if (
++					clampedScale === prevState.zoomScale &&
++					focalClientX === undefined &&
++					focalClientY === undefined
++				) {
++					return prevState;
++				}
++
++				let nextOffsetX = prevState.zoomOffsetX;
++				let nextOffsetY = prevState.zoomOffsetY;
++				const element = photoButtonRef.current;
++
++				if (
++					element &&
++					focalClientX !== undefined &&
++					focalClientY !== undefined &&
++					prevState.zoomScale > 0
++				) {
++					const rect = element.getBoundingClientRect();
++					const focalX = focalClientX - rect.left - rect.width / 2;
++					const focalY = focalClientY - rect.top - rect.height / 2;
++					const scaleRatio = clampedScale / prevState.zoomScale;
++
++					nextOffsetX = (prevState.zoomOffsetX - focalX) * scaleRatio + focalX;
++					nextOffsetY = (prevState.zoomOffsetY - focalY) * scaleRatio + focalY;
++				}
++
++				const nextOffsets = clampZoomOffset(
++					nextOffsetX,
++					nextOffsetY,
++					clampedScale,
++					element,
++					photoImageRef.current,
++				);
++
++				return {
++					...prevState,
++					zoomScale: clampedScale,
++					zoomOffsetX: nextOffsets.x,
++					zoomOffsetY: nextOffsets.y,
++					isPanning: clampedScale > MIN_ZOOM ? prevState.isPanning : false,
++				};
++			});
++		},
++		[normalizedMaxZoom],
++	);
+@@ -255,5 +426,36 @@ const Gallery = forwardRef<GalleryController, GalleryProps>(function Gallery(
+-	const onTouchStart = useCallback((event: TouchEvent) => {
+-		setState((prevState) => ({
+-			...prevState,
+-			touchStartInfo: event.targetTouches[0],
+-		}));
++	const startPan = useCallback(
++		(clientX: number, clientY: number) => {
++			if (!enableZoom || state.zoomScale <= MIN_ZOOM) {
++				return;
++			}
++
++			panStartRef.current = { x: clientX, y: clientY };
++			panOriginRef.current = { x: state.zoomOffsetX, y: state.zoomOffsetY };
++
++			setState((prevState) => ({ ...prevState, isPanning: true }));
++		},
++		[enableZoom, state.zoomOffsetX, state.zoomOffsetY, state.zoomScale],
++	);
++
++	const updatePan = useCallback((clientX: number, clientY: number) => {
++		setState((prevState) => {
++			if (!prevState.isPanning) {
++				return prevState;
++			}
++
++			const deltaX = clientX - panStartRef.current.x;
++			const deltaY = clientY - panStartRef.current.y;
++			const nextOffsets = clampZoomOffset(
++				panOriginRef.current.x + deltaX,
++				panOriginRef.current.y + deltaY,
++				prevState.zoomScale,
++				photoButtonRef.current,
++				photoImageRef.current,
++			);
++
++			return {
++				...prevState,
++				zoomOffsetX: nextOffsets.x,
++				zoomOffsetY: nextOffsets.y,
++			};
++		});
+@@ -262,6 +464,11 @@ const Gallery = forwardRef<GalleryController, GalleryProps>(function Gallery(
+-	const onTouchMove = useCallback((event: TouchEvent) => {
+-		setState((prevState) => ({
+-			...prevState,
+-			touchMoved: true,
+-			touchEndInfo: event.targetTouches[0],
+-		}));
++	const endPan = useCallback(() => {
++		setState((prevState) => {
++			if (!prevState.isPanning) {
++				return prevState;
++			}
++
++			return {
++				...prevState,
++				isPanning: false,
++			};
++		});
+@@ -269,0 +477,169 @@ const Gallery = forwardRef<GalleryController, GalleryProps>(function Gallery(
++	const onTouchStart = useCallback(
++		(event: TouchEvent) => {
++			if (!enableZoom) {
++				const touch = event.targetTouches[0];
++				if (!touch) {
++					return;
++				}
++				setState((prevState) => ({
++					...prevState,
++					touchStartInfo: touch,
++				}));
++				return;
++			}
++
++			if (event.targetTouches.length === 2) {
++				const firstTouch = event.targetTouches[0];
++				const secondTouch = event.targetTouches[1];
++				if (!firstTouch || !secondTouch) {
++					return;
++				}
++
++				const startDistance = getTouchDistance(firstTouch, secondTouch);
++				pinchStartRef.current = {
++					startDistance,
++					startScale: state.zoomScale,
++					startOffsetX: state.zoomOffsetX,
++					startOffsetY: state.zoomOffsetY,
++					startMidpointX: (firstTouch.clientX + secondTouch.clientX) / 2,
++					startMidpointY: (firstTouch.clientY + secondTouch.clientY) / 2,
++				};
++				setState((prevState) => ({
++					...prevState,
++					touchMoved: false,
++					touchStartInfo: null,
++					touchEndInfo: null,
++					isPanning: false,
++				}));
++				return;
++			}
++
++			const touch = event.targetTouches[0];
++			if (!touch) {
++				return;
++			}
++
++			if (state.zoomScale > MIN_ZOOM) {
++				startPan(touch.clientX, touch.clientY);
++				return;
++			}
++
++			setState((prevState) => ({
++				...prevState,
++				touchStartInfo: touch,
++			}));
++		},
++		[
++			enableZoom,
++			getTouchDistance,
++			startPan,
++			state.zoomOffsetX,
++			state.zoomOffsetY,
++			state.zoomScale,
++		],
++	);
++
++	const onTouchMove = useCallback(
++		(event: TouchEvent) => {
++			if (!enableZoom) {
++				const touch = event.targetTouches[0];
++				if (!touch) {
++					return;
++				}
++
++				setState((prevState) => ({
++					...prevState,
++					touchMoved: true,
++					touchEndInfo: touch,
++				}));
++				return;
++			}
++
++			if (event.targetTouches.length === 2 && pinchStartRef.current) {
++				const firstTouch = event.targetTouches[0];
++				const secondTouch = event.targetTouches[1];
++				if (!firstTouch || !secondTouch) {
++					return;
++				}
++
++				event.preventDefault();
++				const pinchStart = pinchStartRef.current;
++				const currentDistance = getTouchDistance(firstTouch, secondTouch);
++				const distanceRatio =
++					pinchStart.startDistance > 0
++						? currentDistance / pinchStart.startDistance
++						: 1;
++				const nextScale = pinchStart.startScale * distanceRatio;
++				const midpointX = (firstTouch.clientX + secondTouch.clientX) / 2;
++				const midpointY = (firstTouch.clientY + secondTouch.clientY) / 2;
++				const midpointDeltaX = midpointX - pinchStart.startMidpointX;
++				const midpointDeltaY = midpointY - pinchStart.startMidpointY;
++				const baseOffsetX = pinchStart.startOffsetX + midpointDeltaX;
++				const baseOffsetY = pinchStart.startOffsetY + midpointDeltaY;
++
++				setState((prevState) => {
++					const clampedScale = Math.min(
++						Math.max(nextScale, MIN_ZOOM),
++						normalizedMaxZoom,
++					);
++					let nextOffsetX = baseOffsetX;
++					let nextOffsetY = baseOffsetY;
++					const element = photoButtonRef.current;
++					if (element && pinchStart.startScale > 0) {
++						const rect = element.getBoundingClientRect();
++						const focalX = midpointX - rect.left - rect.width / 2;
++						const focalY = midpointY - rect.top - rect.height / 2;
++						const scaleRatio = clampedScale / pinchStart.startScale;
++
++						nextOffsetX = (baseOffsetX - focalX) * scaleRatio + focalX;
++						nextOffsetY = (baseOffsetY - focalY) * scaleRatio + focalY;
++					}
++
++					const nextOffsets = clampZoomOffset(
++						nextOffsetX,
++						nextOffsetY,
++						clampedScale,
++						element,
++						photoImageRef.current,
++					);
++
++					return {
++						...prevState,
++						zoomScale: clampedScale,
++						zoomOffsetX: nextOffsets.x,
++						zoomOffsetY: nextOffsets.y,
++						isPanning: false,
++						touchMoved: false,
++						touchStartInfo: null,
++						touchEndInfo: null,
++					};
++				});
++				return;
++			}
++
++			const touch = event.targetTouches[0];
++			if (!touch) {
++				return;
++			}
++
++			if (state.zoomScale > MIN_ZOOM) {
++				event.preventDefault();
++				updatePan(touch.clientX, touch.clientY);
++				return;
++			}
++
++			setState((prevState) => ({
++				...prevState,
++				touchMoved: true,
++				touchEndInfo: touch,
++			}));
++		},
++		[
++			getTouchDistance,
++			enableZoom,
++			normalizedMaxZoom,
++			state.zoomScale,
++			updatePan,
++		],
++	);
++
+@@ -270,0 +647,11 @@ const Gallery = forwardRef<GalleryController, GalleryProps>(function Gallery(
++		if (pinchStartRef.current) {
++			pinchStartRef.current = null;
++			endPan();
++			return;
++		}
++
++		if (enableZoom && state.zoomScale > MIN_ZOOM) {
++			endPan();
++			return;
++		}
++
+@@ -286 +673,51 @@ const Gallery = forwardRef<GalleryController, GalleryProps>(function Gallery(
+-	}, [onNextButtonPress, onPrevButtonPress]);
++	}, [
++		enableZoom,
++		endPan,
++		onNextButtonPress,
++		onPrevButtonPress,
++		state.zoomScale,
++	]);
++
++	const onMouseDown = useCallback(
++		(event: MouseEvent<HTMLButtonElement>) => {
++			if (isZoomMode) {
++				event.preventDefault();
++			}
++			startPan(event.clientX, event.clientY);
++		},
++		[isZoomMode, startPan],
++	);
++
++	const onMouseMove = useCallback(
++		(event: MouseEvent<HTMLButtonElement>) => {
++			updatePan(event.clientX, event.clientY);
++		},
++		[updatePan],
++	);
++
++	const onMouseUp = useCallback(() => {
++		endPan();
++	}, [endPan]);
++
++	const onMouseLeave = useCallback(() => {
++		endPan();
++	}, [endPan]);
++
++	const onWheel = useCallback(
++		(event: WheelEvent<HTMLButtonElement>) => {
++			if (!enableZoom) {
++				return;
++			}
++
++			event.preventDefault();
++			const zoomDirection = event.deltaY < 0 ? 1 : -1;
++			const wheelStepMultiplier = Math.max(
++				1,
++				Math.min(Math.abs(event.deltaY) / 100, 3),
++			);
++			const delta = normalizedZoomStep * wheelStepMultiplier * zoomDirection;
++
++			setZoomScale(state.zoomScale + delta, event.clientX, event.clientY);
++		},
++		[enableZoom, normalizedZoomStep, setZoomScale, state.zoomScale],
++	);
+@@ -349,0 +787,20 @@ const Gallery = forwardRef<GalleryController, GalleryProps>(function Gallery(
++	const zoomedPhotoStyle = useMemo(() => {
++		const scale = enableZoom ? state.zoomScale : MIN_ZOOM;
++		const offsetX = enableZoom ? state.zoomOffsetX : 0;
++		const offsetY = enableZoom ? state.zoomOffsetY : 0;
++		return {
++			'--rbg-zoom-scale': String(scale),
++			'--rbg-pan-x': `${offsetX}px`,
++			'--rbg-pan-y': `${offsetY}px`,
++			'--rbg-zoom-transition': state.isPanning
++				? 'none'
++				: 'transform 180ms ease-out',
++		} as CSSProperties;
++	}, [
++		enableZoom,
++		state.isPanning,
++		state.zoomOffsetX,
++		state.zoomOffsetY,
++		state.zoomScale,
++	]);
++
+@@ -387,0 +845,11 @@ const Gallery = forwardRef<GalleryController, GalleryProps>(function Gallery(
++									onMouseDown={onMouseDown}
++									onMouseMove={onMouseMove}
++									onMouseUp={onMouseUp}
++									onMouseLeave={onMouseLeave}
++									onWheel={onWheel}
++									buttonRef={photoButtonRef}
++									imageRef={photoImageRef}
++									enableZoom={enableZoom}
++									isZoomMode={isZoomMode}
++									isPanning={state.isPanning}
++									style={zoomedPhotoStyle}
+diff --git a/src/components/image.tsx b/src/components/image.tsx
+index c9fcd95..3729f45 100644
+--- a/src/components/image.tsx
++++ b/src/components/image.tsx
+@@ -2 +2 @@ import clsx from 'clsx';
+-import type { CSSProperties } from 'react';
++import type { CSSProperties, Ref } from 'react';
+@@ -18,0 +19 @@ interface ImageProps {
++	imageRef?: Ref<HTMLImageElement>;
+@@ -39,0 +41 @@ function Image({
++	imageRef,
+@@ -93,0 +96 @@ function Image({
++					ref={imageRef}
+diff --git a/src/components/photo.tsx b/src/components/photo.tsx
+index 11c3012..a703877 100644
+--- a/src/components/photo.tsx
++++ b/src/components/photo.tsx
+@@ -2 +2,7 @@ import clsx from 'clsx';
+-import type { CSSProperties, TouchEvent } from 'react';
++import type {
++	CSSProperties,
++	MouseEvent,
++	Ref,
++	TouchEvent,
++	WheelEvent,
++} from 'react';
+@@ -16,0 +23,5 @@ interface PhotoProps {
++	onMouseDown?: (event: MouseEvent<HTMLButtonElement>) => void;
++	onMouseMove?: (event: MouseEvent<HTMLButtonElement>) => void;
++	onMouseUp?: (event: MouseEvent<HTMLButtonElement>) => void;
++	onMouseLeave?: (event: MouseEvent<HTMLButtonElement>) => void;
++	onWheel?: (event: WheelEvent<HTMLButtonElement>) => void;
+@@ -19,0 +31,5 @@ interface PhotoProps {
++	buttonRef?: Ref<HTMLButtonElement>;
++	imageRef?: Ref<HTMLImageElement>;
++	enableZoom?: boolean;
++	isZoomMode?: boolean;
++	isPanning?: boolean;
+@@ -30,0 +47,5 @@ function Photo({
++	onMouseDown,
++	onMouseMove,
++	onMouseUp,
++	onMouseLeave,
++	onWheel,
+@@ -33,0 +55,5 @@ function Photo({
++	buttonRef,
++	imageRef,
++	enableZoom = true,
++	isZoomMode = false,
++	isPanning = false,
+@@ -35,0 +62,3 @@ function Photo({
++		if (isZoomMode) {
++			return;
++		}
+@@ -37 +66 @@ function Photo({
+-	}, [onPress]);
++	}, [isZoomMode, onPress]);
+@@ -53,0 +83 @@ function Photo({
++					ref={buttonRef}
+@@ -56 +86,7 @@ function Photo({
+-					className="photo-button gallery-photo-button"
++					className={clsx(
++						'photo-button',
++						'gallery-photo-button',
++						enableZoom && 'gallery-photo-button--zoom-enabled',
++						isZoomMode && 'gallery-photo-button--zoomed',
++						isPanning && 'gallery-photo-button--panning',
++					)}
+@@ -59,0 +96,5 @@ function Photo({
++					onMouseDown={onMouseDown}
++					onMouseMove={onMouseMove}
++					onMouseUp={onMouseUp}
++					onMouseLeave={onMouseLeave}
++					onWheel={onWheel}
+@@ -67,0 +109 @@ function Photo({
++						imageRef={imageRef}
+diff --git a/src/css/style.css b/src/css/style.css
+index fd855c7..338c798 100644
+--- a/src/css/style.css
++++ b/src/css/style.css
+@@ -283,0 +284,4 @@
++		--rbg-zoom-scale: 1;
++		--rbg-pan-x: 0px;
++		--rbg-pan-y: 0px;
++		--rbg-zoom-transition: transform 180ms ease-out;
+@@ -294 +298,3 @@
+-		transform: translateY(-50%);
++		transform: translateY(-50%) translate(var(--rbg-pan-x), var(--rbg-pan-y))
++			scale(var(--rbg-zoom-scale));
++		transform-origin: center center;
+@@ -295,0 +302 @@
++		transition: var(--rbg-zoom-transition);
+@@ -316,0 +324,13 @@
++	.gallery-photo-button--zoom-enabled {
++		touch-action: none;
++	}
++
++	.gallery-photo-button--zoomed {
++		cursor: grab;
++	}
++
++	.gallery-photo-button--zoomed:active,
++	.gallery-photo-button--panning {
++		cursor: grabbing;
++	}
++
+diff --git a/src/react-bnb-gallery.tsx b/src/react-bnb-gallery.tsx
+index 20bd83f..c9cae97 100644
+--- a/src/react-bnb-gallery.tsx
++++ b/src/react-bnb-gallery.tsx
+@@ -41,0 +42 @@ export interface ReactBnbGalleryProps {
++	enableZoom?: boolean;
+@@ -49 +50 @@ export interface ReactBnbGalleryProps {
+-	phrases?: GalleryPhrases;
++	phrases?: Partial<GalleryPhrases>;
+@@ -52,0 +54 @@ export interface ReactBnbGalleryProps {
++	maxZoom?: number;
+@@ -54,0 +57 @@ export interface ReactBnbGalleryProps {
++	zoomStep?: number;
+@@ -66,0 +70 @@ export interface ReactBnbGalleryProps {
++ * @param enableZoom - Enables wheel/pinch zoom and pan interactions in the active photo viewport (default: `true`)
+@@ -77,0 +82 @@ export interface ReactBnbGalleryProps {
++ * @param maxZoom - Maximum zoom scale applied by gestures (default: `3`)
+@@ -79,0 +85 @@ export interface ReactBnbGalleryProps {
++ * @param zoomStep - Zoom sensitivity step for wheel and pinch interactions (default: `0.25`)
+@@ -87,0 +94 @@ export function ReactBnbGallery({
++	enableZoom = true,
+@@ -95 +102 @@ export function ReactBnbGallery({
+-	phrases = defaultPhrases,
++	phrases: phrasesProp,
+@@ -98,0 +106 @@ export function ReactBnbGallery({
++	maxZoom = 3,
+@@ -100,0 +109 @@ export function ReactBnbGallery({
++	zoomStep = 0.25,
+@@ -166,0 +176,4 @@ export function ReactBnbGallery({
++	const phrases = useMemo(
++		() => ({ ...defaultPhrases, ...(phrasesProp || {}) }),
++		[phrasesProp],
++	);
+@@ -279,0 +293 @@ export function ReactBnbGallery({
++										enableZoom={enableZoom}
+@@ -283,0 +298,2 @@ export function ReactBnbGallery({
++										maxZoom={maxZoom}
++										zoomStep={zoomStep}

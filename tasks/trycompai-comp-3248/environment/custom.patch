@@ -1,0 +1,293 @@
+diff --git a/apps/framework-editor/app/(pages)/frameworks/components/FrameworksTreeTable.tsx b/apps/framework-editor/app/(pages)/frameworks/components/FrameworksTreeTable.tsx
+index 8d71d9f9d..492e18995 100644
+--- a/apps/framework-editor/app/(pages)/frameworks/components/FrameworksTreeTable.tsx
++++ b/apps/framework-editor/app/(pages)/frameworks/components/FrameworksTreeTable.tsx
+@@ -1,5 +1,9 @@
+ 'use client';
+ 
++import {
++  ColumnResizeHandle,
++  useResizableColumns,
++} from '@/app/components/table/resizable-columns';
+ import { Button } from '@trycompai/ui/button';
+ import { ChevronDown, ChevronRight, FileText, Folder, Pencil, Trash2 } from 'lucide-react';
+ import Link from 'next/link';
+@@ -19,6 +23,25 @@ interface FrameworksTreeTableProps {
+   onDeleteFamily: (family: FrameworkFamilyWithCount) => void;
+ }
+ 
++const FRAMEWORK_COLUMNS = [
++  { key: 'name', label: 'Name', defaultWidth: 360, align: 'left', resizable: true },
++  { key: 'version', label: 'Version', defaultWidth: 120, align: 'center', resizable: true },
++  { key: 'status', label: 'Status', defaultWidth: 140, align: 'center', resizable: true },
++  {
++    key: 'requirements',
++    label: 'Requirements',
++    defaultWidth: 150,
++    align: 'center',
++    resizable: true,
++  },
++  { key: 'controls', label: 'Controls', defaultWidth: 120, align: 'center', resizable: true },
++  { key: 'actions', label: '', defaultWidth: 88, align: 'center', resizable: false },
++] as const;
++const FRAMEWORK_DEFAULT_WIDTHS = Object.fromEntries(
++  FRAMEWORK_COLUMNS.map((column) => [column.key, column.defaultWidth]),
++);
++const FRAMEWORK_WIDTHS_COOKIE = 'fwk-frameworks-list-col-widths';
++
+ // Frameworks nested in a family indent ~6 characters past the root, like a file
+ // inside a folder in Finder / Windows Explorer.
+ const NESTED_INDENT_PX = 48;
+@@ -30,23 +53,57 @@ export function FrameworksTreeTable({
+   onEditFamily,
+   onDeleteFamily,
+ }: FrameworksTreeTableProps) {
++  const { widths, startResize } = useResizableColumns(
++    FRAMEWORK_WIDTHS_COOKIE,
++    FRAMEWORK_DEFAULT_WIDTHS,
++  );
++  const totalWidth = FRAMEWORK_COLUMNS.reduce(
++    (sum, column) => sum + (widths[column.key] ?? column.defaultWidth),
++    0,
++  );
++
+   return (
+     <div className="scrollbar-primary border-border overflow-x-auto rounded-xs border">
+-      <table className="w-full border-collapse text-sm">
++      <table
++        className="border-collapse text-sm"
++        style={{ tableLayout: 'fixed', width: totalWidth, minWidth: '100%' }}
++      >
++        <colgroup>
++          {FRAMEWORK_COLUMNS.map((column) => (
++            <col
++              key={column.key}
++              style={{ width: widths[column.key] ?? column.defaultWidth }}
++            />
++          ))}
++        </colgroup>
+         <thead className="bg-muted/50">
+           <tr className="text-muted-foreground text-xs">
+-            <th className="px-3 py-2 text-left font-medium">Name</th>
+-            <th className="px-3 py-2 text-center font-medium">Version</th>
+-            <th className="px-3 py-2 text-center font-medium">Status</th>
+-            <th className="px-3 py-2 text-center font-medium">Requirements</th>
+-            <th className="px-3 py-2 text-center font-medium">Controls</th>
+-            <th className="w-20 px-3 py-2" />
++            {FRAMEWORK_COLUMNS.map((column) => (
++              <th
++                key={column.key}
++                className={`relative px-3 py-2 font-medium ${
++                  column.align === 'center' ? 'text-center' : 'text-left'
++                }`}
++              >
++                {column.label}
++                {column.resizable && (
++                  <ColumnResizeHandle
++                    columnLabel={column.label}
++                    width={widths[column.key] ?? column.defaultWidth}
++                    onResizeStart={(event) => startResize(column.key, event)}
++                  />
++                )}
++              </th>
++            ))}
+           </tr>
+         </thead>
+         <tbody>
+           {rows.length === 0 && (
+             <tr>
+-              <td colSpan={6} className="text-muted-foreground py-8 text-center">
++              <td
++                colSpan={FRAMEWORK_COLUMNS.length}
++                className="text-muted-foreground py-8 text-center"
++              >
+                 No frameworks yet.
+               </td>
+             </tr>
+@@ -96,12 +153,12 @@ function FamilyRow({
+ 
+   return (
+     <tr className="border-border hover:bg-muted/30 border-b transition-colors">
+-      <td className="px-3 py-2">
+-        <div className="flex items-center gap-1.5">
++      <td className="overflow-hidden px-3 py-2">
++        <div className="flex min-w-0 items-center gap-1.5">
+           <button
+             type="button"
+             onClick={() => onToggle(family.id)}
+-            className="text-muted-foreground hover:text-foreground"
++            className="text-muted-foreground hover:text-foreground shrink-0"
+             aria-label={expanded ? 'Collapse family' : 'Expand family'}
+           >
+             {expanded ? (
+@@ -111,7 +168,7 @@ function FamilyRow({
+             )}
+           </button>
+           <Folder className="text-muted-foreground h-4 w-4 shrink-0" />
+-          <span className="font-medium">{family.name}</span>
++          <span className="truncate font-medium">{family.name}</span>
+         </div>
+       </td>
+       <td className={`${CENTER_CELL} text-muted-foreground`}>{countLabel}</td>
+@@ -157,15 +214,15 @@ function FrameworkRow({
+ }) {
+   return (
+     <tr className="border-border hover:bg-muted/30 border-b transition-colors">
+-      <td className="px-3 py-2">
++      <td className="overflow-hidden px-3 py-2">
+         <div
+-          className="flex items-center gap-1.5"
++          className="flex min-w-0 items-center gap-1.5"
+           style={{ paddingLeft: indented ? NESTED_INDENT_PX : 0 }}
+         >
+           {/* Spacer matching the family chevron so names line up. */}
+           <span className="inline-block w-4 shrink-0" />
+           <FileText className="text-muted-foreground h-4 w-4 shrink-0" />
+-          <Link href={`/frameworks/${framework.id}`} className="hover:underline">
++          <Link href={`/frameworks/${framework.id}`} className="truncate hover:underline">
+             {framework.name}
+           </Link>
+         </div>
+diff --git a/apps/framework-editor/app/components/table/column-widths-cookie.ts b/apps/framework-editor/app/components/table/column-widths-cookie.ts
+new file mode 100644
+index 000000000..35e0f22e9
+--- /dev/null
++++ b/apps/framework-editor/app/components/table/column-widths-cookie.ts
+@@ -0,0 +1,50 @@
++import { useState } from 'react';
++
++const COOKIE_MAX_AGE_SECONDS = 31_536_000;
++
++export const sanitizeColumnWidths = (value: unknown): Record<string, number> => {
++  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
++    return {};
++  }
++
++  return Object.fromEntries(
++    Object.entries(value).flatMap(([columnKey, width]) =>
++      typeof width === 'number' && Number.isFinite(width) && width >= 1
++        ? [[columnKey, Math.round(width)]]
++        : [],
++    ),
++  );
++};
++
++export const loadColumnWidths = (cookieName: string): Record<string, number> => {
++  if (typeof document === 'undefined') {
++    return {};
++  }
++
++  try {
++    const prefix = `${cookieName}=`;
++    const cookie = document.cookie.split('; ').find((entry) => entry.startsWith(prefix));
++    return cookie
++      ? sanitizeColumnWidths(JSON.parse(decodeURIComponent(cookie.slice(prefix.length))))
++      : {};
++  } catch {
++    return {};
++  }
++};
++
++export const saveColumnWidths = (
++  cookieName: string,
++  widths: Record<string, number>,
++): void => {
++  if (typeof document === 'undefined') {
++    return;
++  }
++
++  const value = encodeURIComponent(JSON.stringify(sanitizeColumnWidths(widths)));
++  document.cookie = `${cookieName}=${value}; path=/; max-age=${COOKIE_MAX_AGE_SECONDS}; samesite=lax`;
++};
++
++export const useSavedColumnWidths = (cookieName: string): Record<string, number> => {
++  const [savedWidths] = useState(() => loadColumnWidths(cookieName));
++  return savedWidths;
++};
+diff --git a/apps/framework-editor/app/components/table/resizable-columns.tsx b/apps/framework-editor/app/components/table/resizable-columns.tsx
+new file mode 100644
+index 000000000..906ca176d
+--- /dev/null
++++ b/apps/framework-editor/app/components/table/resizable-columns.tsx
+@@ -0,0 +1,81 @@
++'use client';
++
++import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
++import { saveColumnWidths, useSavedColumnWidths } from './column-widths-cookie';
++
++const MINIMUM_COLUMN_WIDTH_PX = 60;
++
++export const useResizableColumns = (
++  cookieName: string,
++  defaultWidths: Record<string, number>,
++) => {
++  const savedWidths = useSavedColumnWidths(cookieName);
++  const [resizedWidths, setResizedWidths] = useState<Record<string, number>>({});
++  const widths = useMemo(
++    () => ({ ...defaultWidths, ...savedWidths, ...resizedWidths }),
++    [defaultWidths, resizedWidths, savedWidths],
++  );
++  const activeCleanup = useRef<(() => void) | null>(null);
++
++  const startResize = useCallback(
++    (columnKey: string, event: React.MouseEvent) => {
++      event.preventDefault();
++      event.stopPropagation();
++      const initialPointerX = event.clientX;
++      const initialWidth = widths[columnKey] ?? MINIMUM_COLUMN_WIDTH_PX;
++
++      const handleMouseMove = (moveEvent: MouseEvent) => {
++        const width = Math.max(
++          MINIMUM_COLUMN_WIDTH_PX,
++          Math.round(initialWidth + moveEvent.clientX - initialPointerX),
++        );
++        setResizedWidths((currentWidths) => ({ ...currentWidths, [columnKey]: width }));
++      };
++
++      const cleanup = () => {
++        document.removeEventListener('mousemove', handleMouseMove);
++        document.removeEventListener('mouseup', handleMouseUp);
++        document.body.style.userSelect = '';
++        activeCleanup.current = null;
++      };
++
++      const handleMouseUp = () => {
++        cleanup();
++        saveColumnWidths(cookieName, widths);
++      };
++
++      document.body.style.userSelect = 'none';
++      document.addEventListener('mousemove', handleMouseMove);
++      document.addEventListener('mouseup', handleMouseUp);
++      activeCleanup.current = cleanup;
++    },
++    [cookieName, widths],
++  );
++
++  useEffect(() => () => activeCleanup.current?.(), []);
++
++  return { widths, startResize };
++};
++
++interface ColumnResizeHandleProps {
++  columnLabel: string;
++  width: number;
++  onResizeStart: (event: React.MouseEvent) => void;
++}
++
++export const ColumnResizeHandle = ({
++  columnLabel,
++  width,
++  onResizeStart,
++}: ColumnResizeHandleProps) => (
++  <div
++    role="separator"
++    aria-label={`Resize ${columnLabel} column`}
++    aria-orientation="vertical"
++    aria-valuemin={MINIMUM_COLUMN_WIDTH_PX}
++    aria-valuenow={width}
++    onMouseDown={onResizeStart}
++    onClick={(event) => event.stopPropagation()}
++    className="hover:bg-primary/50 absolute top-0 right-0 z-10 h-full w-1.5 cursor-col-resize select-none"
++  />
++);

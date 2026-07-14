@@ -1,0 +1,4 @@
+{
+  "framework": "vitest-playwright",
+  "root": "tests/harness"
+}

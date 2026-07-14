@@ -1,0 +1,6 @@
+node_modules
+.vite
+.vite-cache
+test-results
+playwright-report
+coverage

@@ -1,0 +1,319 @@
+diff --git a/packages/coreui-react/src/components/nav/CNavGroup.tsx b/packages/coreui-react/src/components/nav/CNavGroup.tsx
+index 48d122b7..c7592d7e 100644
+--- a/packages/coreui-react/src/components/nav/CNavGroup.tsx
++++ b/packages/coreui-react/src/components/nav/CNavGroup.tsx
+@@ -4,6 +4,7 @@ import React, {
+   forwardRef,
+   HTMLAttributes,
+   ReactNode,
++  useCallback,
+   useContext,
+   useEffect,
+   useId,
+@@ -18,8 +19,7 @@ import type { TransitionStatus } from 'react-transition-group'
+
+ import { PolymorphicRefForwardingComponent } from '../../helpers'
+
+-import { CNavGroupContext } from './CNavGroupContext'
+-import { CSidebarNavContext } from '../sidebar/CSidebarNavContext'
++import { CNavGroupContext, CNavGroupContextValue } from './CNavGroupContext'
+ export interface CNavGroupProps extends HTMLAttributes<HTMLDivElement | HTMLLIElement> {
+   /**
+    * Component used for the root node. Either a string to use a HTML element or a component.
+@@ -54,9 +54,6 @@ export interface CNavGroupProps extends HTMLAttributes<HTMLDivElement | HTMLLIEl
+   visible?: boolean
+ }
+
+-const isPrefix = (chain: string[], other: string[]) =>
+-  chain.every((id, index) => other[index] === id)
+-
+ export const CNavGroup: PolymorphicRefForwardingComponent<'li', CNavGroupProps> = forwardRef<
+   HTMLDivElement | HTMLLIElement,
+   CNavGroupProps
+@@ -75,70 +72,100 @@ export const CNavGroup: PolymorphicRefForwardingComponent<'li', CNavGroupProps>
+     ref
+   ) => {
+     const id = useId()
+-    const parentChain = useContext(CNavGroupContext)
+-    const chain = useMemo(() => [...parentChain, id], [parentChain, id])
+
+-    const navContext = useContext(CSidebarNavContext)
+-    const setOpenChain = navContext?.setOpenChain
++    // Accordion of the parent level: lets this group read whether it is the open one and request
++    // its own open/close. `null` when rendered outside a `CSidebarNav`.
++    const parentContext = useContext(CNavGroupContext)
++    const parentContextRef = useRef(parentContext)
++    parentContextRef.current = parentContext
+
+     const [height, setHeight] = useState<number | string>(0)
+     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     const navItemsRef = useRef<any>(null)
+
+     const [uncontrolledVisible, setUncontrolledVisible] = useState(Boolean(visible))
++    // This group's own accordion state for its children. It survives the group being collapsed,
++    // so reopening the group restores whichever child was previously open.
++    const [activeChildId, setActiveChildId] = useState<string | undefined>()
++    const previousVisibleRef = useRef(visible)
++    const wasShownRef = useRef(false)
+
+     const controlled = visible !== undefined && onVisibleChange !== undefined
+
+     const _visible = controlled
+       ? Boolean(visible)
+-      : navContext
+-        ? chain.length > 0 && isPrefix(chain, navContext.openChain)
++      : parentContext
++        ? parentContext.activeId === id
+         : uncontrolledVisible
+
+     // Sync the accordion with the `visible` prop: seeds default-open groups and follows later
+-    // changes (and keeps controlled groups in sync). `setOpenChain` is stable, so this does not
+-    // re-run on unrelated accordion updates—letting a default-open group be collapsed manually.
++    // changes (and keeps controlled groups in sync). Watching only `visible` keeps this from
++    // re-running on unrelated accordion updates—so a default-open group can be collapsed manually.
+     useEffect(() => {
+-      if (!setOpenChain || visible === undefined) {
++      if (visible === undefined) {
+         return
+       }
+
+-      if (visible) {
+-        setOpenChain((prev) => (chain.length > prev.length && isPrefix(prev, chain) ? chain : prev))
++      const parentSetActiveId = parentContextRef.current?.setActiveId
++      if (parentSetActiveId) {
++        if (visible) {
++          parentSetActiveId(id)
++          if (previousVisibleRef.current === false) {
++            setActiveChildId(undefined)
++          }
++        } else {
++          parentSetActiveId((prev) => (prev === id ? undefined : prev))
++        }
+       } else {
+-        setOpenChain((prev) => (isPrefix(chain, prev) ? parentChain : prev))
++        setUncontrolledVisible(visible)
+       }
+-    }, [visible, setOpenChain, chain, parentChain])
++      previousVisibleRef.current = visible
++    }, [visible, id])
+
+-    // Standalone (no sidebar): mirror the `visible` prop into local state.
++    // Accordion: when another branch opens, a controlled group must close too. As its visibility
++    // is owned by the parent, request the change through `onVisibleChange`.
+     useEffect(() => {
+-      if (navContext || visible === undefined) {
++      if (!controlled || !visible) {
+         return
+       }
+
+-      setUncontrolledVisible(visible)
+-    }, [visible, navContext])
++      const activeId = parentContext?.activeId
++      if (activeId !== undefined && activeId !== id) {
++        onVisibleChange?.(false)
++      }
++    }, [controlled, visible, parentContext?.activeId, id, onVisibleChange])
+
+-    // Accordion: when another branch opens, a controlled group must close too. As its
+-    // visibility is owned by the parent, request the change through `onVisibleChange`.
+-    useEffect(() => {
+-      if (!controlled || !navContext || !visible) {
++    // Open this group within its parent level and cascade up to the root, revealing the whole
++    // branch. Used by an active nav link and by nested groups to bubble the request upwards.
++    const openBranch = useCallback(() => {
++      const parent = parentContextRef.current
++      if (!parent) {
+         return
+       }
+
+-      const openHere = chain.length > 0 && isPrefix(chain, navContext.openChain)
+-      if (!openHere && navContext.openChain.length > 0) {
+-        onVisibleChange?.(false)
++      parent.setActiveId(id)
++    }, [id])
++
++    // Drop nested open state when this group transitions from open to closed.
++    useEffect(() => {
++      if (wasShownRef.current && !_visible) {
++        setActiveChildId(undefined)
+       }
+-    }, [controlled, navContext, visible, chain, onVisibleChange])
++      wasShownRef.current = _visible
++    }, [_visible])
++
++    const childContextValue = useMemo<CNavGroupContextValue>(
++      () => ({ activeId: activeChildId, setActiveId: setActiveChildId, openBranch }),
++      [activeChildId, openBranch]
++    )
+
+     const handleTogglerOnClick = (event: React.MouseEvent<HTMLElement>) => {
+       event.preventDefault()
+       const next = !_visible
+
+       if (!controlled) {
+-        if (setOpenChain) {
+-          setOpenChain(next ? chain : parentChain)
++        if (parentContext) {
++          parentContext.setActiveId(next ? id : undefined)
+         } else {
+           setUncontrolledVisible(next)
+         }
+@@ -190,7 +217,7 @@ export const CNavGroup: PolymorphicRefForwardingComponent<'li', CNavGroupProps>
+     const togglerContent = typeof toggler === 'function' ? toggler({ visible: _visible }) : toggler
+
+     return (
+-      <CNavGroupContext.Provider value={chain}>
++      <CNavGroupContext.Provider value={childContextValue}>
+         <Component
+           className={classNames('nav-group', { show: _visible }, className)}
+           {...rest}
+diff --git a/packages/coreui-react/src/components/nav/CNavGroupContext.ts b/packages/coreui-react/src/components/nav/CNavGroupContext.ts
+index d16130be..3b3408bc 100644
+--- a/packages/coreui-react/src/components/nav/CNavGroupContext.ts
++++ b/packages/coreui-react/src/components/nav/CNavGroupContext.ts
+@@ -1,8 +1,27 @@
+-import { createContext } from 'react'
++import { createContext, Dispatch, SetStateAction } from 'react'
++
++export interface CNavGroupContextValue {
++  /**
++   * The id of the currently open child group at this level, or `undefined` when none is open.
++   * Each `CNavGroup` keeps its own accordion state, so collapsing an ancestor never discards the
++   * open/closed state of its descendants—reopening the ancestor restores them.
++   */
++  activeId: string | undefined
++  /**
++   * Open (or, with `undefined`, close) a child group at this level. Opening a group collapses its
++   * siblings, mirroring the vanilla `groupsAutoCollapse` behavior.
++   */
++  setActiveId: Dispatch<SetStateAction<string | undefined>>
++  /**
++   * Open the whole branch from the parent group up to the root. Used by an active nav link to
++   * reveal every ancestor group.
++   */
++  openBranch: () => void
++}
+
+ /**
+- * The chain of stable ids of the ancestor nav groups, from the root nav down to (and
+- * including) the closest parent `CNavGroup`. An empty array means the consumer is rendered
+- * directly under `CSidebarNav`, with no parent group.
++ * Provides the per-level accordion state to the direct children (`CNavGroup`, `CNavLink`) of a
++ * `CSidebarNav` or a parent `CNavGroup`. `null` means the consumer is rendered outside a sidebar
++ * navigation, in which case groups fall back to their own local state.
+  */
+-export const CNavGroupContext = createContext<string[]>([])
++export const CNavGroupContext = createContext<CNavGroupContextValue | null>(null)
+diff --git a/packages/coreui-react/src/components/nav/CNavLink.tsx b/packages/coreui-react/src/components/nav/CNavLink.tsx
+index 9f91334a..63a911a2 100644
+--- a/packages/coreui-react/src/components/nav/CNavLink.tsx
++++ b/packages/coreui-react/src/components/nav/CNavLink.tsx
+@@ -4,7 +4,6 @@ import classNames from 'classnames'
+
+ import { CLinkProps, CLink } from '../link/CLink'
+ import { CNavGroupContext } from './CNavGroupContext'
+-import { CSidebarNavContext } from '../sidebar/CSidebarNavContext'
+
+ import { PolymorphicRefForwardingComponent } from '../../helpers'
+ import { useForkedRef } from '../../hooks'
+@@ -23,13 +22,12 @@ export const CNavLink: PolymorphicRefForwardingComponent<'a', CNavLinkProps> = f
+   const navLinkRef = useRef<HTMLAnchorElement>(null)
+   const forkedRef = useForkedRef(ref, navLinkRef)
+
+-  const parentChain = useContext(CNavGroupContext)
+-  const setOpenChain = useContext(CSidebarNavContext)?.setOpenChain
++  const openBranch = useContext(CNavGroupContext)?.openBranch
+
+   useEffect(() => {
+     const element = navLinkRef.current
+
+-    if (!element || !setOpenChain || parentChain.length === 0) {
++    if (!element || !openBranch) {
+       return
+     }
+
+@@ -37,7 +35,7 @@ export const CNavLink: PolymorphicRefForwardingComponent<'a', CNavLinkProps> = f
+     const sync = () => {
+       const active = element.classList.contains('active')
+       if (active && !wasActive) {
+-        setOpenChain(parentChain)
++        openBranch()
+       }
+
+       wasActive = active
+@@ -48,7 +46,7 @@ export const CNavLink: PolymorphicRefForwardingComponent<'a', CNavLinkProps> = f
+     observer.observe(element, { attributes: true, attributeFilter: ['class'] })
+
+     return () => observer.disconnect()
+-  }, [parentChain, setOpenChain])
++  }, [openBranch])
+
+   return (
+     <CLink className={classNames('nav-link', className)} {...rest} ref={forkedRef}>
+diff --git a/packages/coreui-react/src/components/sidebar/CSidebarNav.tsx b/packages/coreui-react/src/components/sidebar/CSidebarNav.tsx
+index c8b931f7..9b09bd92 100644
+--- a/packages/coreui-react/src/components/sidebar/CSidebarNav.tsx
++++ b/packages/coreui-react/src/components/sidebar/CSidebarNav.tsx
+@@ -1,8 +1,15 @@
+-import React, { ElementType, forwardRef, HTMLAttributes, useMemo, useState } from 'react'
++import React, {
++  ElementType,
++  forwardRef,
++  HTMLAttributes,
++  useCallback,
++  useMemo,
++  useState,
++} from 'react'
+ import PropTypes from 'prop-types'
+ import classNames from 'classnames'
+
+-import { CSidebarNavContext } from './CSidebarNavContext'
++import { CNavGroupContext, CNavGroupContextValue } from '../nav/CNavGroupContext'
+
+ import { PolymorphicRefForwardingComponent } from '../../helpers'
+
+@@ -35,11 +42,15 @@ export const CSidebarNav: PolymorphicRefForwardingComponent<'ul', CSidebarNavPro
+   HTMLUListElement,
+   CSidebarNavProps
+ >(({ children, as: Component = 'ul', className, compact, variant, ...rest }, ref) => {
+-  const [openChain, setOpenChain] = useState<string[]>([])
+-  const contextValue = useMemo(() => ({ openChain, setOpenChain }), [openChain])
++  const [activeId, setActiveId] = useState<string | undefined>()
++  const openBranch = useCallback(() => {}, [])
++  const contextValue = useMemo<CNavGroupContextValue>(
++    () => ({ activeId, setActiveId, openBranch }),
++    [activeId, openBranch]
++  )
+
+   return (
+-    <CSidebarNavContext.Provider value={contextValue}>
++    <CNavGroupContext.Provider value={contextValue}>
+       <Component
+         className={classNames(
+           'sidebar-nav',
+@@ -54,7 +65,7 @@ export const CSidebarNav: PolymorphicRefForwardingComponent<'ul', CSidebarNavPro
+       >
+         {children}
+       </Component>
+-    </CSidebarNavContext.Provider>
++    </CNavGroupContext.Provider>
+   )
+ })
+
+diff --git a/packages/coreui-react/src/components/sidebar/CSidebarNavContext.ts b/packages/coreui-react/src/components/sidebar/CSidebarNavContext.ts
+deleted file mode 100644
+index 405e6282..00000000
+--- a/packages/coreui-react/src/components/sidebar/CSidebarNavContext.ts
++++ /dev/null
+@@ -1,11 +0,0 @@
+-import { createContext, Dispatch, SetStateAction } from 'react'
+-
+-export interface CSidebarNavContextProps {
+-  /**
+-   * The chain of stable ids of the currently open nav group, from the root to the open leaf.
+-   */
+-  openChain: string[]
+-  setOpenChain: Dispatch<SetStateAction<string[]>>
+-}
+-
+-export const CSidebarNavContext = createContext<CSidebarNavContextProps | null>(null)

@@ -1,0 +1,744 @@
+diff --git a/src/features/settings/components/hotkey-editor-sections.ts b/src/features/settings/components/hotkey-editor-sections.ts
+index 3f07b947..a67114f5 100644
+--- a/src/features/settings/components/hotkey-editor-sections.ts
++++ b/src/features/settings/components/hotkey-editor-sections.ts
+@@ -1,4 +1,9 @@
+-import type { HotkeyKey } from '@/config/hotkeys'
++import {
++  formatHotkeyBinding,
++  normalizeHotkeyBinding,
++  type HotkeyBindingMap,
++  type HotkeyKey,
++} from '@/config/hotkeys'
+ 
+ export interface HotkeyEditorItem {
+   /** i18n key for the command label */
+@@ -14,6 +19,58 @@ export interface HotkeyEditorSection {
+   items: readonly HotkeyEditorItem[]
+ }
+ 
++export interface HotkeyEditorSearchResult {
++  section: HotkeyEditorSection
++  item: HotkeyEditorItem
++}
++
++interface HotkeyEditorSearchOptions {
++  query: string
++  sections: readonly HotkeyEditorSection[]
++  hotkeys: HotkeyBindingMap
++  translate: (key: string) => string
++}
++
++export function getHotkeyBindingDisplayLabel(binding: string, unassignedLabel: string): string {
++  return binding ? formatHotkeyBinding(binding) : unassignedLabel
++}
++
++export function getHotkeyEditorSearchResults({
++  query,
++  sections,
++  hotkeys,
++  translate,
++}: HotkeyEditorSearchOptions): HotkeyEditorSearchResult[] {
++  const normalizedQuery = query.trim().toLowerCase()
++
++  if (!normalizedQuery) {
++    return []
++  }
++
++  const normalizedBindingQuery = normalizeHotkeyBinding(normalizedQuery)
++
++  return sections.flatMap((section) => {
++    const sectionLabel = translate(section.titleKey).toLowerCase()
++
++    return section.items.flatMap((item) => {
++      const itemLabel = translate(item.labelKey).toLowerCase()
++      const bindings = item.keys.map((key) => hotkeys[key].toLowerCase())
++
++      const isMatch =
++        itemLabel.includes(normalizedQuery) ||
++        sectionLabel.includes(normalizedQuery) ||
++        item.keys.some((key) => key.toLowerCase().includes(normalizedQuery)) ||
++        bindings.some(
++          (binding) =>
++            binding.includes(normalizedQuery) ||
++            (normalizedBindingQuery.length > 0 && binding === normalizedBindingQuery),
++        )
++
++      return isMatch ? [{ section, item }] : []
++    })
++  })
++}
++
+ export const HOTKEY_EDITOR_SECTIONS: readonly HotkeyEditorSection[] = [
+   {
+     titleKey: 'projects.settings.hotkeys.sections.playback.title',
+diff --git a/src/features/settings/components/hotkey-editor.tsx b/src/features/settings/components/hotkey-editor.tsx
+index b432d007..2aafd878 100644
+--- a/src/features/settings/components/hotkey-editor.tsx
++++ b/src/features/settings/components/hotkey-editor.tsx
+@@ -1,9 +1,20 @@
+ import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
+ import { useTranslation } from 'react-i18next'
+ import * as DialogPrimitive from '@radix-ui/react-dialog'
+-import { AlertTriangle, Download, Keyboard, RotateCcw, Upload, X } from 'lucide-react'
++import { AlertTriangle, Download, Keyboard, RotateCcw, Search, Upload, X } from 'lucide-react'
+ import { toast } from 'sonner'
++import {
++  AlertDialog,
++  AlertDialogAction,
++  AlertDialogCancel,
++  AlertDialogContent,
++  AlertDialogDescription,
++  AlertDialogFooter,
++  AlertDialogHeader,
++  AlertDialogTitle,
++} from '@/components/ui/alert-dialog'
+ import { Button } from '@/components/ui/button'
++import { Input } from '@/components/ui/input'
+ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+ import { cn } from '@/shared/ui/cn'
+ import {
+@@ -22,6 +33,8 @@ import {
+ } from '@/config/hotkeys'
+ import {
+   HOTKEY_EDITOR_SECTIONS,
++  getHotkeyBindingDisplayLabel,
++  getHotkeyEditorSearchResults,
+   type HotkeyEditorItem,
+   type HotkeyEditorSection,
+ } from './hotkey-editor-sections'
+@@ -389,6 +402,7 @@ export function HotkeyEditor() {
+   const resetHotkeyBinding = useSettingsStore((state) => state.resetHotkeyBinding)
+   const resetHotkeys = useSettingsStore((state) => state.resetHotkeys)
+   const fileInputRef = useRef<HTMLInputElement | null>(null)
++  const partialConflictOverrideSnapshotRef = useRef<typeof hotkeyOverrides | null>(null)
+ 
+   const [selectedKey, setSelectedKey] = useState<HotkeyKey>('PLAY_PAUSE')
+   const [activeLayer, setActiveLayer] = useState<HotkeyEditorSection | null>(null)
+@@ -397,10 +411,13 @@ export function HotkeyEditor() {
+   const [captureKey, setCaptureKey] = useState<HotkeyKey | null>(null)
+   const [draftBinding, setDraftBinding] = useState('')
+   const [previewBinding, setPreviewBinding] = useState('')
++  const [searchQuery, setSearchQuery] = useState('')
++  const [isResetAllDialogOpen, setIsResetAllDialogOpen] = useState(false)
+ 
+   const selectedItem = HOTKEY_ITEM_BY_KEY[selectedKey]
+   const selectedSlotLabel = t(getSlotLabelKey(selectedItem, selectedKey))
+   const isSelectedCustom = selectedKey in hotkeyOverrides
++  const isSelectedUnassigned = hotkeys[selectedKey] === ''
+   const customCount = Object.keys(hotkeyOverrides).length
+   const isCapturingSelectedKey = captureKey === selectedKey
+   const activePreviewBinding = isCapturingSelectedKey
+@@ -421,18 +438,53 @@ export function HotkeyEditor() {
+   const selectedBrowserHotkey = getBrowserHostileHotkey(hotkeys[selectedKey])
+   const pendingBrowserHotkey =
+     captureKey && draftBinding ? getBrowserHostileHotkey(draftBinding) : null
++  const searchResults = useMemo(
++    () =>
++      getHotkeyEditorSearchResults({
++        query: searchQuery,
++        sections: HOTKEY_EDITOR_SECTIONS,
++        hotkeys,
++        translate: t,
++      }),
++    [hotkeys, searchQuery, t],
++  )
++  const hasSearchQuery = searchQuery.trim().length > 0
++
++  const stopCapture = ({ restorePartialOverwrites = true } = {}) => {
++    const snapshot = partialConflictOverrideSnapshotRef.current
++    partialConflictOverrideSnapshotRef.current = null
++
++    if (restorePartialOverwrites && snapshot) {
++      replaceHotkeyOverrides(snapshot)
++    }
++
++    setCaptureKey(null)
++    setDraftBinding('')
++    setPreviewBinding('')
++  }
+ 
+   useEffect(() => {
+     if (!captureKey) {
+       return undefined
+     }
+ 
++    const stopCaptureAndRestoreOverwrites = () => {
++      const snapshot = partialConflictOverrideSnapshotRef.current
++      partialConflictOverrideSnapshotRef.current = null
++
++      if (snapshot) {
++        useSettingsStore.getState().replaceHotkeyOverrides(snapshot)
++      }
++
++      setCaptureKey(null)
++      setDraftBinding('')
++      setPreviewBinding('')
++    }
++
+     const handleKeyDown = (event: KeyboardEvent) => {
+       if (event.key === 'Escape') {
+         event.preventDefault()
+-        setCaptureKey(null)
+-        setDraftBinding('')
+-        setPreviewBinding('')
++        stopCaptureAndRestoreOverwrites()
+         return
+       }
+ 
+@@ -459,17 +511,23 @@ export function HotkeyEditor() {
+     }
+   }, [captureKey])
+ 
++  useEffect(() => {
++    const snapshotRef = partialConflictOverrideSnapshotRef
++
++    return () => {
++      const snapshot = snapshotRef.current
++      snapshotRef.current = null
++
++      if (snapshot) {
++        useSettingsStore.getState().replaceHotkeyOverrides(snapshot)
++      }
++    }
++  }, [])
++
+   const startCapture = (key: HotkeyKey) => {
++    stopCapture()
+     setSelectedKey(key)
+     setCaptureKey(key)
+-    setDraftBinding('')
+-    setPreviewBinding('')
+-  }
+-
+-  const stopCapture = () => {
+-    setCaptureKey(null)
+-    setDraftBinding('')
+-    setPreviewBinding('')
+   }
+ 
+   const layerTokens = useMemo(() => {
+@@ -536,10 +594,30 @@ export function HotkeyEditor() {
+     }
+ 
+     setHotkeyBinding(captureKey, normalizeHotkeyBinding(draftBinding))
+-    stopCapture()
++    stopCapture({ restorePartialOverwrites: false })
++  }
++
++  const overwriteConflictingHotkey = (conflictKey: HotkeyKey) => {
++    if (!captureKey || !draftBinding || !hasHotkeyPrimaryToken(draftBinding)) {
++      return
++    }
++
++    if (!partialConflictOverrideSnapshotRef.current) {
++      partialConflictOverrideSnapshotRef.current = {
++        ...useSettingsStore.getState().hotkeyOverrides,
++      }
++    }
++
++    const remainingConflicts = captureConflicts.filter((key) => key !== conflictKey)
++    unbindHotkeyBinding(conflictKey)
++
++    if (remainingConflicts.length === 0) {
++      setHotkeyBinding(captureKey, normalizeHotkeyBinding(draftBinding))
++      stopCapture({ restorePartialOverwrites: false })
++    }
+   }
+ 
+-  const overwriteConflictingHotkeys = () => {
++  const overwriteAllConflictingHotkeys = () => {
+     if (!captureKey || !draftBinding || !hasHotkeyPrimaryToken(draftBinding)) {
+       return
+     }
+@@ -548,17 +626,23 @@ export function HotkeyEditor() {
+       unbindHotkeyBinding(conflictKey)
+     }
+     setHotkeyBinding(captureKey, normalizeHotkeyBinding(draftBinding))
+-    stopCapture()
++    stopCapture({ restorePartialOverwrites: false })
+   }
+ 
+   const unbindSelectedHotkey = () => {
+     unbindHotkeyBinding(selectedKey)
+-    stopCapture()
++    stopCapture({ restorePartialOverwrites: false })
+   }
+ 
+   const resetSelectedHotkey = () => {
+     resetHotkeyBinding(selectedKey)
+-    stopCapture()
++    stopCapture({ restorePartialOverwrites: false })
++  }
++
++  const confirmResetAllHotkeys = () => {
++    resetHotkeys()
++    stopCapture({ restorePartialOverwrites: false })
++    toast.success(t('projects.settings.hotkeys.resetAllToast'))
+   }
+ 
+   const handleTokenClick = (token: string) => {
+@@ -590,6 +674,11 @@ export function HotkeyEditor() {
+     }
+   }
+ 
++  const selectSearchResult = (item: HotkeyEditorItem) => {
++    stopCapture()
++    setSelectedKey(item.keys[0]!)
++  }
++
+   const exportHotkeys = () => {
+     try {
+       const exportDocument = createHotkeyExportDocument(hotkeyOverrides)
+@@ -607,7 +696,7 @@ export function HotkeyEditor() {
+       const importResult = parseHotkeyImportDocument(JSON.parse(contents))
+ 
+       replaceHotkeyOverrides(importResult.overrides)
+-      stopCapture()
++      stopCapture({ restorePartialOverwrites: false })
+ 
+       const messages = [
+         t('projects.settings.hotkeys.importedCommands', {
+@@ -686,42 +775,105 @@ export function HotkeyEditor() {
+       <div className="px-4 pb-3 md:px-5">
+         <div className="flex min-h-[380px] overflow-hidden rounded-lg border border-white/7 bg-[#0d0d0f]/90">
+           {/* Section layers sidebar */}
+-          <div className="flex shrink-0 flex-col gap-0.5 border-r border-white/6 p-2">
+-            <button
+-              type="button"
+-              onClick={() => {
+-                stopCapture()
+-                setActiveLayer(null)
+-              }}
+-              className={cn(
+-                'rounded-lg px-3 py-2 text-left text-[11px] font-medium uppercase tracking-[0.16em] transition-colors duration-150 ease-out motion-reduce:transition-none',
+-                activeLayer === null
+-                  ? 'bg-primary/15 text-primary'
+-                  : 'text-muted-foreground hover:bg-white/5 hover:text-foreground/80',
+-              )}
+-            >
+-              {t('projects.settings.hotkeys.all')}
+-            </button>
+-            <div className="my-1 border-t border-white/6" />
+-            {HOTKEY_EDITOR_SECTIONS.map((section) => (
+-              <button
+-                key={section.titleKey}
+-                type="button"
+-                onClick={() => {
+-                  stopCapture()
+-                  setActiveLayer(section)
+-                  setSelectedKey(section.items[0]!.keys[0]!)
+-                }}
+-                className={cn(
+-                  'rounded-lg px-3 py-2 text-left text-[11px] font-medium uppercase tracking-[0.16em] transition-colors duration-150 ease-out motion-reduce:transition-none',
+-                  activeLayer === section
+-                    ? 'bg-primary/15 text-primary'
+-                    : 'text-muted-foreground hover:bg-white/5 hover:text-foreground/80',
+-                )}
+-              >
+-                {t(section.titleKey)}
+-              </button>
+-            ))}
++          <div className="flex w-52 shrink-0 flex-col gap-0.5 border-r border-white/6 p-2">
++            <div className="relative mb-2">
++              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
++              <Input
++                value={searchQuery}
++                onChange={(event) => setSearchQuery(event.target.value)}
++                placeholder={t('projects.settings.hotkeys.searchPlaceholder')}
++                className="h-8 border-white/10 bg-white/5 pl-8 pr-2 text-xs"
++              />
++            </div>
++            {hasSearchQuery ? (
++              <div className="min-h-0 flex-1 space-y-1 overflow-y-auto pr-1">
++                <div className="px-1 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
++                  {t('projects.settings.hotkeys.searchResultCount', {
++                    count: searchResults.length,
++                  })}
++                </div>
++                <ul aria-label={t('projects.settings.hotkeys.searchResults')}>
++                  {searchResults.length > 0 ? (
++                    searchResults.map(({ section, item }) => {
++                      const resultKey = item.keys.join('|')
++                      const isSelectedResult = item.keys.includes(selectedKey)
++
++                      return (
++                        <li key={resultKey}>
++                          <button
++                            type="button"
++                            onClick={() => selectSearchResult(item)}
++                            className={cn(
++                              'w-full rounded-lg px-2.5 py-2 text-left transition-colors duration-150 ease-out motion-reduce:transition-none',
++                              isSelectedResult
++                                ? 'bg-primary/15 text-primary'
++                                : 'text-muted-foreground hover:bg-white/5 hover:text-foreground/80',
++                            )}
++                          >
++                            <div className="text-[11px] font-medium leading-4 text-foreground">
++                              {t(item.labelKey)}
++                            </div>
++                            <div className="mt-0.5 truncate text-[10px] uppercase tracking-[0.14em]">
++                              {t(section.titleKey)} ·{' '}
++                              {item.keys
++                                .map((key) =>
++                                  getHotkeyBindingDisplayLabel(
++                                    hotkeys[key],
++                                    t('projects.settings.hotkeys.unassigned'),
++                                  ),
++                                )
++                                .join(' / ')}
++                            </div>
++                          </button>
++                        </li>
++                      )
++                    })
++                  ) : (
++                    <li className="rounded-lg border border-white/8 bg-white/4 px-2.5 py-2 text-xs leading-4 text-muted-foreground">
++                      {t('projects.settings.hotkeys.noSearchResults')}
++                    </li>
++                  )}
++                </ul>
++              </div>
++            ) : (
++              <>
++                <button
++                  type="button"
++                  onClick={() => {
++                    stopCapture()
++                    setActiveLayer(null)
++                  }}
++                  className={cn(
++                    'rounded-lg px-3 py-2 text-left text-[11px] font-medium uppercase tracking-[0.16em] transition-colors duration-150 ease-out motion-reduce:transition-none',
++                    activeLayer === null
++                      ? 'bg-primary/15 text-primary'
++                      : 'text-muted-foreground hover:bg-white/5 hover:text-foreground/80',
++                  )}
++                >
++                  {t('projects.settings.hotkeys.all')}
++                </button>
++                <div className="my-1 border-t border-white/6" />
++                {HOTKEY_EDITOR_SECTIONS.map((section) => (
++                  <button
++                    key={section.titleKey}
++                    type="button"
++                    onClick={() => {
++                      stopCapture()
++                      setActiveLayer(section)
++                      setSelectedKey(section.items[0]!.keys[0]!)
++                    }}
++                    className={cn(
++                      'rounded-lg px-3 py-2 text-left text-[11px] font-medium uppercase tracking-[0.16em] transition-colors duration-150 ease-out motion-reduce:transition-none',
++                      activeLayer === section
++                        ? 'bg-primary/15 text-primary'
++                        : 'text-muted-foreground hover:bg-white/5 hover:text-foreground/80',
++                    )}
++                  >
++                    {t(section.titleKey)}
++                  </button>
++                ))}
++              </>
++            )}
+           </div>
+           {/* Keyboard */}
+           <div className="flex min-w-0 flex-1 flex-col justify-center p-4 md:p-5">
+@@ -761,7 +913,10 @@ export function HotkeyEditor() {
+                   {t('projects.settings.hotkeys.current')}
+                 </div>
+                 <div className="mt-1 font-medium text-foreground">
+-                  {formatHotkeyBinding(hotkeys[selectedKey])}
++                  {getHotkeyBindingDisplayLabel(
++                    hotkeys[selectedKey],
++                    t('projects.settings.hotkeys.unassigned'),
++                  )}
+                 </div>
+               </div>
+               <div>
+@@ -815,7 +970,12 @@ export function HotkeyEditor() {
+                   >
+                     {t('common.save')}
+                   </Button>
+-                  <Button size="sm" variant="outline" className="w-full" onClick={stopCapture}>
++                  <Button
++                    size="sm"
++                    variant="outline"
++                    className="w-full"
++                    onClick={() => stopCapture()}
++                  >
+                     {t('common.cancel')}
+                   </Button>
+                 </>
+@@ -829,7 +989,7 @@ export function HotkeyEditor() {
+                     variant="outline"
+                     className="w-full"
+                     onClick={unbindSelectedHotkey}
+-                    disabled={!hotkeys[selectedKey]}
++                    disabled={isSelectedUnassigned}
+                   >
+                     {t('projects.settings.hotkeys.unbind')}
+                   </Button>
+@@ -885,21 +1045,36 @@ export function HotkeyEditor() {
+                       const hotkeyItem = HOTKEY_ITEM_BY_KEY[key]
+ 
+                       return (
+-                        <div key={key} className="text-xs text-foreground/88">
+-                          {t('projects.settings.hotkeys.conflictsWith', {
+-                            action: t(hotkeyItem.labelKey),
+-                          })}
++                        <div
++                          key={key}
++                          className="flex items-center justify-between gap-2 text-xs text-foreground/88"
++                        >
++                          <span className="min-w-0 flex-1">
++                            {t('projects.settings.hotkeys.conflictsWith', {
++                              action: t(hotkeyItem.labelKey),
++                            })}
++                          </span>
++                          <Button
++                            size="sm"
++                            variant="destructive"
++                            className="h-6 shrink-0 px-2 text-[10px]"
++                            onClick={() => overwriteConflictingHotkey(key)}
++                          >
++                            {t('projects.settings.hotkeys.overwrite')}
++                          </Button>
+                         </div>
+                       )
+                     })}
+-                    <Button
+-                      size="sm"
+-                      variant="destructive"
+-                      className="h-7 w-full px-2 text-[11px]"
+-                      onClick={overwriteConflictingHotkeys}
+-                    >
+-                      {t('projects.settings.hotkeys.overwriteAll')}
+-                    </Button>
++                    {captureConflicts.length > 1 ? (
++                      <Button
++                        size="sm"
++                        variant="destructive"
++                        className="h-7 w-full px-2 text-[11px]"
++                        onClick={overwriteAllConflictingHotkeys}
++                      >
++                        {t('projects.settings.hotkeys.overwriteAll')}
++                      </Button>
++                    ) : null}
+                   </div>
+                 ) : null}
+                 {pendingBrowserHotkey ? (
+@@ -920,19 +1095,37 @@ export function HotkeyEditor() {
+             </p>
+ 
+             <div className="border-t border-white/6 pt-3">
+-              <Button
+-                variant="destructive"
+-                size="sm"
+-                className="w-full gap-1.5"
+-                onClick={() => {
+-                  resetHotkeys()
+-                  stopCapture()
+-                }}
+-                disabled={customCount === 0}
+-              >
+-                <RotateCcw className="h-3.5 w-3.5" />
+-                {t('projects.settings.hotkeys.resetAll')}
+-              </Button>
++              <AlertDialog open={isResetAllDialogOpen} onOpenChange={setIsResetAllDialogOpen}>
++                <Button
++                  variant="destructive"
++                  size="sm"
++                  className="w-full gap-1.5"
++                  onClick={() => setIsResetAllDialogOpen(true)}
++                  disabled={customCount === 0}
++                >
++                  <RotateCcw className="h-3.5 w-3.5" />
++                  {t('projects.settings.hotkeys.resetAll')}
++                </Button>
++                <AlertDialogContent>
++                  <AlertDialogHeader>
++                    <AlertDialogTitle>
++                      {t('projects.settings.hotkeys.resetAllConfirmTitle')}
++                    </AlertDialogTitle>
++                    <AlertDialogDescription>
++                      {t('projects.settings.hotkeys.resetAllConfirmDescription')}
++                    </AlertDialogDescription>
++                  </AlertDialogHeader>
++                  <AlertDialogFooter>
++                    <AlertDialogCancel>{t('common.cancel')}</AlertDialogCancel>
++                    <AlertDialogAction
++                      className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
++                      onClick={confirmResetAllHotkeys}
++                    >
++                      {t('projects.settings.hotkeys.resetAllConfirmAction')}
++                    </AlertDialogAction>
++                  </AlertDialogFooter>
++                </AlertDialogContent>
++              </AlertDialog>
+             </div>
+           </div>
+         </div>
+diff --git a/src/i18n/locales/partials/projects.json b/src/i18n/locales/partials/projects.json
+index 032b727d..94b1210f 100644
+--- a/src/i18n/locales/partials/projects.json
++++ b/src/i18n/locales/partials/projects.json
+@@ -474,7 +474,16 @@
+             "saveProject": "Save project",
+             "exportVideo": "Export video",
+             "openSceneBrowser": "Open Scene Browser (search AI captions)"
+-          }
++          },
++          "searchPlaceholder": "Search commands or shortcuts",
++          "searchResults": "Shortcut search results",
++          "noSearchResults": "No matching commands",
++          "resetAllConfirmTitle": "Reset all shortcuts?",
++          "resetAllConfirmDescription": "This will remove all custom shortcut overrides and restore the default keybindings. This cannot be undone.",
++          "resetAllConfirmAction": "Reset all",
++          "resetAllToast": "Shortcuts reset to defaults",
++          "searchResultCount_one": "{{count}} result",
++          "searchResultCount_other": "{{count}} results"
+         }
+       }
+     },
+@@ -964,7 +973,16 @@
+             "saveProject": "Guardar proyecto",
+             "exportVideo": "Exportar video",
+             "openSceneBrowser": "Abrir el explorador de escenas (buscar subtítulos de IA)"
+-          }
++          },
++          "searchPlaceholder": "Buscar comandos o atajos",
++          "searchResults": "Resultados de búsqueda de atajos",
++          "noSearchResults": "No hay comandos coincidentes",
++          "resetAllConfirmTitle": "¿Restablecer todos los atajos?",
++          "resetAllConfirmDescription": "Esto eliminará todas las anulaciones de atajos personalizadas y restaurará los atajos predeterminados. Esta acción no se puede deshacer.",
++          "resetAllConfirmAction": "Restablecer todo",
++          "resetAllToast": "Atajos restablecidos a los valores predeterminados",
++          "searchResultCount_one": "{{count}} resultado",
++          "searchResultCount_other": "{{count}} resultados"
+         }
+       }
+     },
+@@ -1454,7 +1472,16 @@
+             "saveProject": "Enregistrer le projet",
+             "exportVideo": "Exporter la vidéo",
+             "openSceneBrowser": "Ouvrir l'explorateur de scènes (rechercher les sous-titres IA)"
+-          }
++          },
++          "searchPlaceholder": "Rechercher des commandes ou raccourcis",
++          "searchResults": "Résultats de recherche de raccourcis",
++          "noSearchResults": "Aucune commande correspondante",
++          "resetAllConfirmTitle": "Réinitialiser tous les raccourcis ?",
++          "resetAllConfirmDescription": "Cela supprimera toutes les personnalisations de raccourcis et restaurera les raccourcis par défaut. Cette action est irréversible.",
++          "resetAllConfirmAction": "Tout réinitialiser",
++          "resetAllToast": "Raccourcis réinitialisés aux valeurs par défaut",
++          "searchResultCount_one": "{{count}} résultat",
++          "searchResultCount_other": "{{count}} résultats"
+         }
+       }
+     },
+@@ -1944,7 +1971,16 @@
+             "saveProject": "Projekt speichern",
+             "exportVideo": "Video exportieren",
+             "openSceneBrowser": "Szenenbrowser öffnen (KI-Untertitel durchsuchen)"
+-          }
++          },
++          "searchPlaceholder": "Befehle oder Tastenkürzel suchen",
++          "searchResults": "Suchergebnisse für Tastenkürzel",
++          "noSearchResults": "Keine passenden Befehle",
++          "resetAllConfirmTitle": "Alle Tastenkürzel zurücksetzen?",
++          "resetAllConfirmDescription": "Dadurch werden alle benutzerdefinierten Tastenkürzel-Überschreibungen entfernt und die Standardtastenkürzel wiederhergestellt. Dies kann nicht rückgängig gemacht werden.",
++          "resetAllConfirmAction": "Alle zurücksetzen",
++          "resetAllToast": "Tastenkürzel auf Standardwerte zurückgesetzt",
++          "searchResultCount_one": "{{count}} Ergebnis",
++          "searchResultCount_other": "{{count}} Ergebnisse"
+         }
+       }
+     },
+@@ -2434,7 +2470,16 @@
+             "saveProject": "Salvar projeto",
+             "exportVideo": "Exportar vídeo",
+             "openSceneBrowser": "Abrir o navegador de cenas (pesquisar legendas de IA)"
+-          }
++          },
++          "searchPlaceholder": "Pesquisar comandos ou atalhos",
++          "searchResults": "Resultados da pesquisa de atalhos",
++          "noSearchResults": "Nenhum comando correspondente",
++          "resetAllConfirmTitle": "Redefinir todos os atalhos?",
++          "resetAllConfirmDescription": "Isso removerá todas as substituições de atalhos personalizadas e restaurará os atalhos padrão. Esta ação não pode ser desfeita.",
++          "resetAllConfirmAction": "Redefinir tudo",
++          "resetAllToast": "Atalhos redefinidos para os padrões",
++          "searchResultCount_one": "{{count}} resultado",
++          "searchResultCount_other": "{{count}} resultados"
+         }
+       }
+     },
+@@ -2924,7 +2969,16 @@
+             "saveProject": "プロジェクトを保存",
+             "exportVideo": "動画をエクスポート",
+             "openSceneBrowser": "シーンブラウザを開く（AIキャプションを検索）"
+-          }
++          },
++          "searchPlaceholder": "コマンドまたはショートカットを検索",
++          "searchResults": "ショートカット検索結果",
++          "noSearchResults": "一致するコマンドがありません",
++          "resetAllConfirmTitle": "すべてのショートカットをリセットしますか？",
++          "resetAllConfirmDescription": "すべてのカスタムショートカット設定を削除し、既定のキー割り当てに戻します。この操作は元に戻せません。",
++          "resetAllConfirmAction": "すべてリセット",
++          "resetAllToast": "ショートカットを既定値にリセットしました",
++          "searchResultCount_one": "{{count}} 件の結果",
++          "searchResultCount_other": "{{count}} 件の結果"
+         }
+       }
+     },
+@@ -3414,7 +3468,16 @@
+             "saveProject": "프로젝트 저장",
+             "exportVideo": "동영상 내보내기",
+             "openSceneBrowser": "장면 브라우저 열기 (AI 자막 검색)"
+-          }
++          },
++          "searchPlaceholder": "명령 또는 단축키 검색",
++          "searchResults": "단축키 검색 결과",
++          "noSearchResults": "일치하는 명령이 없습니다",
++          "resetAllConfirmTitle": "모든 단축키를 초기화할까요?",
++          "resetAllConfirmDescription": "모든 사용자 지정 단축키 재정의를 제거하고 기본 키 바인딩으로 복원합니다. 이 작업은 되돌릴 수 없습니다.",
++          "resetAllConfirmAction": "모두 초기화",
++          "resetAllToast": "단축키가 기본값으로 초기화되었습니다",
++          "searchResultCount_one": "결과 {{count}}개",
++          "searchResultCount_other": "결과 {{count}}개"
+         }
+       }
+     },
+@@ -3904,7 +3967,16 @@
+             "saveProject": "保存项目",
+             "exportVideo": "导出视频",
+             "openSceneBrowser": "打开场景浏览器（搜索 AI 字幕）"
+-          }
++          },
++          "searchPlaceholder": "搜索命令或快捷键",
++          "searchResults": "快捷键搜索结果",
++          "noSearchResults": "没有匹配的命令",
++          "resetAllConfirmTitle": "重置所有快捷键？",
++          "resetAllConfirmDescription": "这会移除所有自定义快捷键覆盖并恢复默认按键绑定。此操作无法撤销。",
++          "resetAllConfirmAction": "全部重置",
++          "resetAllToast": "快捷键已重置为默认值",
++          "searchResultCount_one": "{{count}} 个结果",
++          "searchResultCount_other": "{{count}} 个结果"
+         }
+       }
+     },
+@@ -4394,7 +4466,16 @@
+             "saveProject": "Projeyi kaydet",
+             "exportVideo": "Videoyu dışa aktar",
+             "openSceneBrowser": "Sahne Tarayıcısını aç (YZ altyazılarında ara)"
+-          }
++          },
++          "searchPlaceholder": "Komutları veya kısayolları ara",
++          "searchResults": "Kısayol arama sonuçları",
++          "noSearchResults": "Eşleşen komut yok",
++          "resetAllConfirmTitle": "Tüm kısayollar sıfırlansın mı?",
++          "resetAllConfirmDescription": "Bu işlem tüm özel kısayol geçersiz kılmalarını kaldırır ve varsayılan kısayolları geri yükler. Bu geri alınamaz.",
++          "resetAllConfirmAction": "Tümünü sıfırla",
++          "resetAllToast": "Kısayollar varsayılanlara sıfırlandı",
++          "searchResultCount_one": "{{count}} sonuç",
++          "searchResultCount_other": "{{count}} sonuç"
+         }
+       }
+     },

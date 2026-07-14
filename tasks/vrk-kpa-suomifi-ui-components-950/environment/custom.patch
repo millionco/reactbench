@@ -1,0 +1,77 @@
+diff --git a/src/core/Table/Table.tsx b/src/core/Table/Table.tsx
+index 3fd0089cceae1644d1e9cf5840849e4dea8293f4..e996f67a43144f67ca5420add41d63612600c4e9 100644
+--- a/src/core/Table/Table.tsx
++++ b/src/core/Table/Table.tsx
+@@ -71,6 +71,9 @@ const tableClassNames = {
+   selectionCellSkeleton: `${baseClassName}_selection-cell-skeleton`,
+ };
+ 
++const isRowSelectionDisabled = (row: object) =>
++  'rowSelectionDisabled' in row && row.rowSelectionDisabled === true;
++
+ export interface TableColumn {
+   key: string;
+   labelText: string;
+@@ -190,6 +193,9 @@ const BaseTable = <TColumns extends readonly TableColumn[]>(
+   const [selectedRowIds, setSelectedRowIds] = useState<string[]>(
+     controlledSelectedRowIds || [],
+   );
++  const [selectionDisabledRowIds] = useState(() =>
++    propData.filter(isRowSelectionDisabled).map((row) => row.id),
++  );
+ 
+   const [hasHorizontalScrollbar, setHasHorizontalScrollbar] = useState(false);
+   const wrapperRef = React.createRef<HTMLDivElement>();
+@@ -437,29 +443,30 @@ const BaseTable = <TColumns extends readonly TableColumn[]>(
+                     highlighted: selectedRowIds.includes(row.id),
+                   })}
+                 >
+-                  {enableRowSelection && (
+-                    <HtmlTableCell
+-                      className={classnames(
+-                        tableClassNames.td,
+-                        tableClassNames.selectionTd,
+-                      )}
+-                    >
+-                      <Checkbox
+-                        checked={selectedRowIds.includes(row.id)}
+-                        onClick={(checkedVal) =>
+-                          handleRowSelection(
+-                            row.id,
+-                            checkedVal.checkboxState ? 'add' : 'remove',
+-                          )
+-                        }
+-                        labelProps={row.rowSelectionLabelProps}
++                  {enableRowSelection &&
++                    !selectionDisabledRowIds.includes(row.id) && (
++                      <HtmlTableCell
++                        className={classnames(
++                          tableClassNames.td,
++                          tableClassNames.selectionTd,
++                        )}
+                       >
+-                        <VisuallyHidden>
+-                          {row.rowSelectionCheckboxLabel}
+-                        </VisuallyHidden>
+-                      </Checkbox>
+-                    </HtmlTableCell>
+-                  )}
++                        <Checkbox
++                          checked={selectedRowIds.includes(row.id)}
++                          onClick={(checkedVal) =>
++                            handleRowSelection(
++                              row.id,
++                              checkedVal.checkboxState ? 'add' : 'remove',
++                            )
++                          }
++                          labelProps={row.rowSelectionLabelProps}
++                        >
++                          <VisuallyHidden>
++                            {row.rowSelectionCheckboxLabel}
++                          </VisuallyHidden>
++                        </Checkbox>
++                      </HtmlTableCell>
++                    )}
+                   {enableSingleRowSelection && (
+                     <HtmlTableCell
+                       className={classnames(

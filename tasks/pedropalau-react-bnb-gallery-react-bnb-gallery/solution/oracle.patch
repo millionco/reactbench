@@ -1,0 +1,86 @@
+diff --git a/src/react-bnb-gallery.tsx b/src/react-bnb-gallery.tsx
+index 20bd83f..0627a01 100644
+--- a/src/react-bnb-gallery.tsx
++++ b/src/react-bnb-gallery.tsx
+@@ -21,6 +21,8 @@ import type {
+ } from './types/gallery';
+ import { normalizePhotos } from './utils/normalize-photos';
+ 
++const EMPTY_PHOTOS: Array<string | GalleryPhoto> = [];
++
+ function normalizeActivePhotoIndex(index: number, totalPhotos: number): number {
+ 	if (totalPhotos === 0) {
+ 		return 0;
+@@ -91,7 +93,7 @@ export function ReactBnbGallery({
+ 	nextButtonPressed,
+ 	onClose,
+ 	opacity = DEFAULT_OPACITY,
+-	photos: photosInput = [],
++	photos: photosInput = EMPTY_PHOTOS,
+ 	phrases = defaultPhrases,
+ 	preloadSize = 5,
+ 	prevButtonPressed,
+@@ -114,13 +116,17 @@ export function ReactBnbGallery({
+ 			return;
+ 		}
+ 
+-		const previousProps = previousPropsRef.current;
+ 		const usingNonArrayPhotosInput =
+ 			photosInput != null && !Array.isArray(photosInput);
+ 		const wasUsingNonArrayPhotosInput =
+-			previousProps?.photos != null && !Array.isArray(previousProps.photos);
++			previousPropsRef.current?.photos != null &&
++			!Array.isArray(previousPropsRef.current.photos);
+ 
+-		if (usingNonArrayPhotosInput && !wasUsingNonArrayPhotosInput) {
++		if (
++			usingNonArrayPhotosInput &&
++			!wasUsingNonArrayPhotosInput &&
++			previousPropsRef.current !== undefined
++		) {
+ 			console.warn(
+ 				'[react-bnb-gallery] Deprecation: passing `photos` as a single string/object is deprecated in 2.x and will be removed in the next major release. Pass an array instead.',
+ 			);
+@@ -129,10 +135,14 @@ export function ReactBnbGallery({
+ 		const usingDeprecatedDirectionProp =
+ 			typeof direction === 'string' && direction !== FORWARDS;
+ 		const wasUsingDeprecatedDirectionProp =
+-			typeof previousProps?.direction === 'string' &&
+-			previousProps.direction !== FORWARDS;
++			typeof previousPropsRef.current?.direction === 'string' &&
++			previousPropsRef.current.direction !== FORWARDS;
+ 
+-		if (usingDeprecatedDirectionProp && !wasUsingDeprecatedDirectionProp) {
++		if (
++			usingDeprecatedDirectionProp &&
++			!wasUsingDeprecatedDirectionProp &&
++			previousPropsRef.current !== undefined
++		) {
+ 			console.warn(
+ 				'[react-bnb-gallery] Deprecation: `direction` is deprecated in 2.x and will be removed in the next major release. Use navigation callbacks and `activePhotoIndex` control instead.',
+ 			);
+@@ -141,12 +151,13 @@ export function ReactBnbGallery({
+ 		const usingDeprecatedBackgroundColorProp =
+ 			typeof backgroundColorProp === 'string' && backgroundColorProp.length > 0;
+ 		const wasUsingDeprecatedBackgroundColorProp =
+-			typeof previousProps?.backgroundColor === 'string' &&
+-			previousProps.backgroundColor.length > 0;
++			typeof previousPropsRef.current?.backgroundColor === 'string' &&
++			previousPropsRef.current.backgroundColor.length > 0;
+ 
+ 		if (
+ 			usingDeprecatedBackgroundColorProp &&
+-			!wasUsingDeprecatedBackgroundColorProp
++			!wasUsingDeprecatedBackgroundColorProp &&
++			previousPropsRef.current !== undefined
+ 		) {
+ 			console.warn(
+ 				'[react-bnb-gallery] Deprecation: `backgroundColor` is deprecated in 2.x and will be removed in the next major release. Use CSS token `--rbg-overlay` instead.',
+@@ -245,6 +256,7 @@ export function ReactBnbGallery({
+ 				tabIndex={-1}
+ 				role="dialog"
+ 				aria-modal="true"
++				aria-label="Photo gallery"
+ 				style={{ zIndex }}
+ 			>
+ 				<div

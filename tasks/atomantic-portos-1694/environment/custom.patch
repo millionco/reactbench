@@ -1,0 +1,169 @@
+diff --git a/client/src/components/pipeline/editorial/CheckKindBadge.jsx b/client/src/components/pipeline/editorial/CheckKindBadge.jsx
+new file mode 100644
+index 000000000..fe3d8920e
+--- /dev/null
++++ b/client/src/components/pipeline/editorial/CheckKindBadge.jsx
+@@ -0,0 +1,23 @@
++/**
++ * The catalog kind → human label + tone for an editorial check, shared by the
++ * catalog card (EditorialCheckCard) and the findings-triage group header
++ * (EditorialFindingsTriage, #1604) so "rule vs LLM" reads identically in both.
++ * A deterministic/rule check is a hard heuristic; an LLM check is a model
++ * judgement — surfacing the distinction helps the user triage false positives.
++ */
++import { memo } from 'react';
++
++const KIND_BADGE = {
++  deterministic: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
++  llm: 'bg-purple-500/15 text-purple-300 border-purple-500/30',
++};
++
++function CheckKindBadge({ kind, className = '' }) {
++  return (
++    <span className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border ${KIND_BADGE[kind] || KIND_BADGE.deterministic} ${className}`}>
++      {kind === 'llm' ? 'AI' : 'rule'}
++    </span>
++  );
++}
++
++export default memo(CheckKindBadge);
+diff --git a/client/src/components/pipeline/editorial/EditorialCheckCard.jsx b/client/src/components/pipeline/editorial/EditorialCheckCard.jsx
+index d467ff4df..f1ff5989b 100644
+--- a/client/src/components/pipeline/editorial/EditorialCheckCard.jsx
++++ b/client/src/components/pipeline/editorial/EditorialCheckCard.jsx
+@@ -19,11 +19,8 @@
+ import { memo, useEffect, useState } from 'react';
+ import { ChevronDown, ChevronRight, Loader2, Pencil, Sliders, Trash2 } from 'lucide-react';
+ import ToggleSwitch from '../../ToggleSwitch';
++import CheckKindBadge from './CheckKindBadge';
+ 
+-const KIND_BADGE = {
+-  deterministic: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
+-  llm: 'bg-purple-500/15 text-purple-300 border-purple-500/30',
+-};
+ const SEVERITY_BADGE = {
+   high: 'bg-rose-500/15 text-rose-300',
+   medium: 'bg-amber-500/15 text-amber-300',
+@@ -107,9 +104,7 @@ function EditorialCheckCard({
+         <div className="min-w-0 space-y-1">
+           <div className="flex flex-wrap items-center gap-1.5">
+             <span className="text-sm font-medium text-gray-100">{check.label}</span>
+-            <span className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border ${KIND_BADGE[check.kind] || KIND_BADGE.deterministic}`}>
+-              {check.kind === 'llm' ? 'LLM' : 'rule'}
+-            </span>
++            <CheckKindBadge kind={check.kind} />
+             <span className={`text-[10px] px-1.5 py-0.5 rounded ${SEVERITY_BADGE[check.severityDefault] || SEVERITY_BADGE.low}`}>
+               {check.severityDefault}
+             </span>
+diff --git a/client/src/components/pipeline/editorial/EditorialFindingsTriage.jsx b/client/src/components/pipeline/editorial/EditorialFindingsTriage.jsx
+index 6ea237c16..87ed0a5f9 100644
+--- a/client/src/components/pipeline/editorial/EditorialFindingsTriage.jsx
++++ b/client/src/components/pipeline/editorial/EditorialFindingsTriage.jsx
+@@ -15,8 +15,9 @@
+  * bulk-dismisses the selection — each result reactively updates local state.
+  */
+ import { Link, useSearchParams } from 'react-router-dom';
+-import { ChevronDown, ChevronRight, ExternalLink, History, Check, X, Loader2, GitCompareArrows, Search, Ban, Undo2 } from 'lucide-react';
++import { ChevronDown, ChevronRight, ExternalLink, History, Check, X, Loader2, GitCompareArrows, Search, Ban, Undo2, Info } from 'lucide-react';
+ import { useEffect, useMemo, useRef, useState } from 'react';
++import CheckKindBadge from './CheckKindBadge';
+ import {
+   groupFindingsByCheck,
+   findingManuscriptLink,
+@@ -241,6 +242,11 @@ function FindingRow({ seriesId, comment, onCommentChange, selected, onToggleSele
+ // behind a collapsed header and make the filtered view look empty.
+ function CheckGroup({ seriesId, group, onCommentChange, selectedIds, onToggleSelect, onSelectMany, forceOpen = false, canDisable = false, onDisableCheck }) {
+   const [open, setOpen] = useState(group.open > 0);
++  // The check's documented purpose/kind, surfaced inline so the user can tell a
++  // hard rule from a heuristic while triaging (#1604). Collapsed by default to
++  // keep the group header scannable; the registry only ships a description for
++  // some checks, so the toggle is offered only when one exists.
++  const [showInfo, setShowInfo] = useState(false);
+   const expanded = forceOpen || open;
+   const openIds = useMemo(
+     () => group.comments.filter(isOpenFinding).map((c) => c.id),
+@@ -269,6 +275,7 @@ function CheckGroup({ seriesId, group, onCommentChange, selectedIds, onToggleSel
+           <span className="flex items-center gap-1.5 min-w-0">
+             {expanded ? <ChevronDown size={14} className="shrink-0" /> : <ChevronRight size={14} className="shrink-0" />}
+             <span className="text-sm font-medium text-gray-100 truncate">{group.label}</span>
++            {group.kind ? <CheckKindBadge kind={group.kind} className="shrink-0" /> : null}
+             <span className="text-[10px] text-gray-500 shrink-0">{group.open} open · {group.total} total</span>
+           </span>
+           <span className="flex items-center gap-1.5 shrink-0">
+@@ -276,6 +283,23 @@ function CheckGroup({ seriesId, group, onCommentChange, selectedIds, onToggleSel
+             <CountPills counts={group.counts} />
+           </span>
+         </button>
++        {group.description ? (
++          // Reveal the check's documented purpose without leaving triage (#1604).
++          <button
++            type="button"
++            onClick={() => setShowInfo((v) => !v)}
++            aria-expanded={showInfo}
++            aria-label={`${showInfo ? 'Hide' : 'Show'} description for ${group.label}`}
++            title="Show what this check looks for"
++            className={`inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 text-[10px] ${
++              showInfo
++                ? 'border-port-accent/50 text-port-accent'
++                : 'border-port-border text-gray-500 hover:border-port-accent/40 hover:text-gray-200'
++            }`}
++          >
++            <Info size={11} />
++          </button>
++        ) : null}
+         {canDisable && onDisableCheck ? (
+           // Mute a noisy/false-positive check without leaving the triage view
+           // (#1602): disables it (skipped on future runs) and hides its findings
+@@ -292,6 +316,11 @@ function CheckGroup({ seriesId, group, onCommentChange, selectedIds, onToggleSel
+           </button>
+         ) : null}
+       </div>
++      {showInfo && group.description ? (
++        <p className="border-t border-port-border/60 px-2.5 py-2 text-[11px] leading-relaxed text-gray-400">
++          {group.description}
++        </p>
++      ) : null}
+       {expanded ? (
+         <ul className="divide-y divide-port-border/60 border-t border-port-border/60">
+           {group.comments.map((c) => (
+diff --git a/client/src/lib/editorialChecks.js b/client/src/lib/editorialChecks.js
+index a4ba37446..d38283694 100644
+--- a/client/src/lib/editorialChecks.js
++++ b/client/src/lib/editorialChecks.js
+@@ -44,12 +44,12 @@ const emptyCounts = () => ({ high: 0, medium: 0, low: 0 });
+  * Group review comments that came from an editorial check into per-check
+  * sections for the triage view. Only comments carrying a `checkId` are
+  * included (completeness findings have none). Returns
+- *   `[{ checkId, label, scope, kind, comments, open, total, counts, stale }]`
++ *   `[{ checkId, label, description, scope, kind, comments, open, total, counts, stale }]`
+  * ordered by the catalog's scope order then label, with `counts` tallying the
+  * OPEN comments by severity and `stale` counting the OPEN findings whose
+  * analyzed content has drifted since the check ran (#1345). `rowsById` is a
+- * Map/object of catalog rows so each group can show its human label even when
+- * the check is currently disabled.
++ * Map/object of catalog rows so each group can show its human label, kind, and
++ * documented purpose (#1604) even when the check is currently disabled.
+  */
+ export function groupFindingsByCheck(comments = [], rowsById = {}) {
+   const lookup = rowsById instanceof Map ? rowsById : new Map(Object.entries(rowsById || {}));
+@@ -61,6 +61,7 @@ export function groupFindingsByCheck(comments = [], rowsById = {}) {
+       groups.set(c.checkId, {
+         checkId: c.checkId,
+         label: row?.label || c.checkId,
++        description: row?.description || null,
+         scope: row?.scope || 'other',
+         kind: row?.kind || null,
+         comments: [],
+diff --git a/client/src/pages/PipelineEditorialChecks.jsx b/client/src/pages/PipelineEditorialChecks.jsx
+index 69518b4c6..84139ed74 100644
+--- a/client/src/pages/PipelineEditorialChecks.jsx
++++ b/client/src/pages/PipelineEditorialChecks.jsx
+@@ -79,7 +79,7 @@ export default function PipelineEditorialChecks() {
+   } = useProviderModels({ allowDefault: true, silent: true });
+ 
+   const checksById = useMemo(
+-    () => Object.fromEntries(checks.map((c) => [c.id, c])),
++    () => Object.fromEntries(checks.filter((check) => check.enabled).map((check) => [check.id, check])),
+     [checks],
+   );
+   const enabledCount = useMemo(() => checks.filter((c) => c.enabled).length, [checks]);

@@ -1,0 +1,16 @@
+{
+  "name": "softmaple-selection-custom-test-harness",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "bash run-vitest.sh",
+    "e2e": "playwright test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.49.1",
+    "@types/node": "22.13.0",
+    "typescript": "5.7.3"
+  }
+}

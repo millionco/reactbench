@@ -1,0 +1,265 @@
+diff --git a/src/PhoneInput/PhoneInput.tsx b/src/PhoneInput/PhoneInput.tsx
+index d671013..a6e8cd8 100644
+--- a/src/PhoneInput/PhoneInput.tsx
++++ b/src/PhoneInput/PhoneInput.tsx
+@@ -5,9 +5,23 @@ import FlagIcon from 'react-country-flag';
+ import type { CountryCode } from 'libphonenumber-js';
+ 
+ import { detectMobile, getCountryList, getInitialCountry, usePhonenumber } from '../utils';
+-import type { IPhoneInputProps, PhoneNumber } from '../types';
++import type { ICountry, IPhoneInputProps, PhoneNumber } from '../types';
+ import './styles.scss';
+ 
++const toPhoneNumber = (
++  selectedCountry: ICountry | undefined,
++  selectedNumber: string,
++  withCountryMeta: boolean,
++): PhoneNumber =>
++  withCountryMeta
++    ? {
++        phoneNumber: selectedNumber,
++        country: selectedCountry
++          ? omit(selectedCountry, ['hasAreaCodes', 'isAreaCode', 'dialCode', 'regions'])
++          : null,
++      }
++    : selectedNumber;
++
+ export const PhoneInput: FC<IPhoneInputProps> = ({
+   className,
+   maxLength = 21,
+@@ -34,17 +48,16 @@ export const PhoneInput: FC<IPhoneInputProps> = ({
+   const countryList = useRef<HTMLUListElement>(null);
+   const activeCountry = useRef<HTMLLIElement>(null);
+ 
+-  const { country, phoneNumber, showCountries, setShowCountries, onSelect, onInputChange, resetState } = usePhonenumber(
+-    {
++  const { country, phoneNumber, showCountries, setShowCountries, onSelect, onInputChange, resetState } =
++    usePhonenumber({
+       initialValue,
+       initialCountry,
+       format,
+-    },
+-  );
++    });
+ 
+   useEffect(() => {
+-    const clickOutside = (e: Event): void => {
+-      if (phoneInputWrapper.current && !phoneInputWrapper.current.contains(e.target as Node)) {
++    const clickOutside = (event: Event): void => {
++      if (phoneInputWrapper.current && !phoneInputWrapper.current.contains(event.target as Node)) {
+         setShowCountries(false);
+       }
+     };
+@@ -53,24 +66,17 @@ export const PhoneInput: FC<IPhoneInputProps> = ({
+     return (): void => {
+       document.removeEventListener('mousedown', clickOutside);
+     };
+-    // eslint-disable-next-line react-hooks/exhaustive-deps
+-  }, []);
++  }, [setShowCountries]);
+ 
+   useEffect(() => {
+     if (showCountries && country && countryList.current && activeCountry.current) {
+       countryList.current.scrollTop = activeCountry.current.offsetTop - 50;
+     }
++  }, [showCountries, country]);
+ 
+-    const data: PhoneNumber = withCountryMeta
+-      ? {
+-          phoneNumber,
+-          country: country ? omit(country, ['hasAreaCodes', 'isAreaCode', 'dialCode', 'regions']) : null,
+-        }
+-      : phoneNumber;
+-
+-    onChange(data);
+-    // eslint-disable-next-line react-hooks/exhaustive-deps
+-  }, [country, phoneNumber, showCountries]);
++  const handleInputClick = (): void => {
++    onChange?.(toPhoneNumber(country, phoneNumber, withCountryMeta));
++  };
+ 
+   const handleToggleList = (): void => {
+     if (!disabled) {
+@@ -78,31 +84,37 @@ export const PhoneInput: FC<IPhoneInputProps> = ({
+     }
+   };
+ 
+-  const handleMobileSelect = (e: ChangeEvent<HTMLSelectElement>): void => {
+-    const { value } = e.target;
+-    onSelect(value as CountryCode);
++  const handleMobileSelect = (event: ChangeEvent<HTMLSelectElement>): void => {
++    const { value } = event.target;
++    const nextSelection = onSelect(value as CountryCode);
++    onChange(toPhoneNumber(nextSelection.country, nextSelection.phoneNumber, withCountryMeta));
+ 
+     phoneInput.current?.focus();
+   };
+ 
+   const handleSelect = (countryCode: CountryCode) => (): void => {
+-    onSelect(countryCode);
++    const nextSelection = onSelect(countryCode);
++    onChange(toPhoneNumber(nextSelection.country, nextSelection.phoneNumber, withCountryMeta));
+ 
+     phoneInput.current?.focus();
+   };
+ 
+-  const handleChange = (e: ChangeEvent<HTMLInputElement>): void => {
+-    const { value } = e.target;
++  const handleChange = (event: ChangeEvent<HTMLInputElement>): void => {
++    const { value } = event.target;
+ 
+     if (!value.length) {
+-      resetState();
++      const nextSelection = resetState();
++      onChange(toPhoneNumber(nextSelection.country, nextSelection.phoneNumber, withCountryMeta));
++
++      return;
+     }
+ 
+     if (!/^[\d ()+-]+$/.test(value)) {
+       return;
+     }
+ 
+-    onInputChange(value);
++    const nextSelection = onInputChange(value);
++    onChange(toPhoneNumber(nextSelection.country, nextSelection.phoneNumber, withCountryMeta));
+   };
+ 
+   return (
+@@ -157,6 +169,7 @@ export const PhoneInput: FC<IPhoneInputProps> = ({
+         maxLength={maxLength}
+         onFocus={onFocus}
+         onBlur={onBlur}
++        onClick={handleInputClick}
+       />
+       {showCountries && isInternational && !isMobile && (
+         <ul className="country-list" ref={countryList}>
+diff --git a/src/hooks/usePhonenumber.ts b/src/hooks/usePhonenumber.ts
+index f719c64..c207cf6 100644
+--- a/src/hooks/usePhonenumber.ts
++++ b/src/hooks/usePhonenumber.ts
+@@ -1,8 +1,8 @@
+-import { useEffect, useReducer } from 'react';
++import { useReducer } from 'react';
+ import { produce } from 'immer';
+ import { type CountryCode, findPhoneNumbersInText } from 'libphonenumber-js';
+ 
+-import type { IPhoneNumberState, IUsePhoneInputProps } from '../types';
++import type { ICountry, IPhoneNumberState, IUsePhoneInputProps } from '../types';
+ import { findCountryByCode, formatNumber, getCountryByDialCode } from '../utils/countries-fn';
+ 
+ export const initialState: IPhoneNumberState = {
+@@ -38,65 +38,82 @@ const phoneInputReducer = (state: IPhoneNumberState, action: IOnChange | ISetSho
+   }
+ };
+ 
+-export const usePhonenumber = ({ initialValue, initialCountry, format }: IUsePhoneInputProps) => {
+-  const reducer = produce(phoneInputReducer);
+-  const [state, dispatch] = useReducer(reducer, initialState);
++interface ISelectedNumber {
++  country?: ICountry;
++  phoneNumber: string;
++}
++
++const getInitialState = ({ initialValue, initialCountry, format }: IUsePhoneInputProps): IPhoneNumberState => {
+   const isInternational = format === 'INTERNATIONAL';
+ 
+-  useEffect(() => {
+-    let payload = {
+-      country: initialCountry,
+-      phoneNumber: isInternational && initialCountry ? initialCountry.dialCode : '',
+-    };
++  if (initialValue && typeof initialValue === 'string') {
++    const metaData = findPhoneNumbersInText(initialValue);
++    const selectedCountry = findCountryByCode(metaData[0].number.country);
++    const formated = selectedCountry ? formatNumber(initialValue, format, selectedCountry.iso2) : initialValue;
+ 
+-    if (initialValue && typeof initialValue === 'string') {
+-      const metaData = findPhoneNumbersInText(initialValue);
+-      const selectedCountry = findCountryByCode(metaData[0].number.country);
+-      const formated = selectedCountry ? formatNumber(initialValue, format, selectedCountry.iso2) : initialValue;
++    return {
++      country: selectedCountry,
++      phoneNumber: formated.length > 0 ? formated : initialValue,
++      showCountries: false,
++    };
++  }
+ 
+-      payload = {
+-        country: selectedCountry,
+-        phoneNumber: formated.length > 0 ? formated : initialValue,
+-      };
+-    }
++  return {
++    country: initialCountry,
++    phoneNumber: isInternational && initialCountry ? initialCountry.dialCode : '',
++    showCountries: false,
++  };
++};
+ 
+-    dispatch({
+-      type: 'onChange',
+-      payload,
+-    });
+-  }, [format, initialCountry, initialValue, isInternational]);
++export const usePhonenumber = ({ initialValue, initialCountry, format }: IUsePhoneInputProps) => {
++  const reducer = produce(phoneInputReducer);
++  const [state, dispatch] = useReducer(reducer, { initialValue, initialCountry, format }, getInitialState);
++  const isInternational = format === 'INTERNATIONAL';
+ 
+-  const onSelect = (countryCode: CountryCode) => {
++  const onSelect = (countryCode: CountryCode): ISelectedNumber => {
+     const selectedCountry = findCountryByCode(countryCode);
++    const nextSelection: ISelectedNumber = {
++      country: selectedCountry,
++      phoneNumber: selectedCountry?.dialCode || '',
++    };
+ 
+     dispatch({
+       type: 'onChange',
+       payload: {
+-        country: selectedCountry,
+-        phoneNumber: selectedCountry?.dialCode || '',
++        ...nextSelection,
+         showCountries: false,
+       },
+     });
++
++    return nextSelection;
+   };
+ 
+-  const onInputChange = (value: string) => {
++  const onInputChange = (value: string): ISelectedNumber => {
+     const formated = state.country ? formatNumber(value, format, state.country.iso2) : '';
+     const selectedCountry = getCountryByDialCode(formated.length > 0 ? formated : value);
++    const nextSelection: ISelectedNumber = {
++      country: isInternational && selectedCountry ? selectedCountry : state.country,
++      phoneNumber: formated.length > 0 ? formated : value,
++    };
+ 
+     dispatch({
+       type: 'onChange',
+-      payload: {
+-        country: isInternational && selectedCountry ? selectedCountry : state.country,
+-        phoneNumber: formated.length > 0 ? formated : value,
+-      },
++      payload: nextSelection,
+     });
++
++    return nextSelection;
+   };
+ 
+-  const resetState = () => {
++  const resetState = (): ISelectedNumber => {
+     dispatch({
+       type: 'onChange',
+       payload: isInternational ? initialState : { phoneNumber: '' },
+     });
++
++    return {
++      country: isInternational ? initialState.country : state.country,
++      phoneNumber: '',
++    };
+   };
+ 
+   const setShowCountries = (show: boolean) => {

@@ -1,0 +1,10 @@
+{
+  "rd": {
+    "scan_root": "/app/client"
+  },
+  "verifier_timeout_sec": 600,
+  "test": {
+    "cmd": "pnpm exec vitest run",
+    "cwd": "/opt/harness"
+  }
+}

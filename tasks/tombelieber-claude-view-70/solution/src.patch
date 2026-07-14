@@ -1,0 +1,350 @@
+diff --git a/packages/shared/src/components/conversation/blocks/shared/PermissionCard.tsx b/packages/shared/src/components/conversation/blocks/shared/PermissionCard.tsx
+index c7f70763..d17d0a3f 100644
+--- a/packages/shared/src/components/conversation/blocks/shared/PermissionCard.tsx
++++ b/packages/shared/src/components/conversation/blocks/shared/PermissionCard.tsx
+@@ -1,7 +1,6 @@
+ import type { PermissionRequest } from '../../../../types/sidecar-protocol'
+ import { ShieldAlert } from 'lucide-react'
+-import { useCallback, useEffect, useRef, useState } from 'react'
+-import { cn } from '../../../../utils/cn'
++import { useCallback } from 'react'
+ import { InteractiveCardShell } from './InteractiveCardShell'
+ 
+ function getToolDisplay(
+@@ -39,57 +38,17 @@ export function PermissionCard({
+   onAlwaysAllow,
+   resolved,
+ }: PermissionCardProps) {
+-  const totalSeconds = Math.ceil(permission.timeoutMs / 1000)
+-  const [countdown, setCountdown] = useState(totalSeconds)
+-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+-  const onRespondRef = useRef(onRespond)
+-  onRespondRef.current = onRespond
+-  const toolNameRef = useRef(permission.toolName)
+-  toolNameRef.current = permission.toolName
+-
+   const requestId = permission.requestId
+-  const timeoutMs = permission.timeoutMs
+-
+-  const autoDeniedRef = useRef(false)
+-
+-  useEffect(() => {
+-    if (resolved || !onRespondRef.current) return
+-    autoDeniedRef.current = false
+-
+-    const secs = Math.ceil(timeoutMs / 1000)
+-    setCountdown(secs)
+-
+-    timerRef.current = setInterval(() => {
+-      setCountdown((prev) => (prev <= 1 ? 0 : prev - 1))
+-    }, 1000)
+-
+-    return () => {
+-      if (timerRef.current) clearInterval(timerRef.current)
+-    }
+-  }, [requestId, timeoutMs, resolved])
+-
+-  // Auto-deny side effect — runs outside the setState updater to avoid
+-  // "Cannot update component X while rendering component Y" React warning.
+-  useEffect(() => {
+-    if (countdown === 0 && !resolved && !autoDeniedRef.current) {
+-      autoDeniedRef.current = true
+-      if (timerRef.current) clearInterval(timerRef.current)
+-      onRespondRef.current?.(requestId, false)
+-    }
+-  }, [countdown, resolved, requestId])
+ 
+   const handleAllow = useCallback(() => {
+-    if (timerRef.current) clearInterval(timerRef.current)
+     onRespond?.(requestId, true)
+   }, [onRespond, requestId])
+ 
+   const handleDeny = useCallback(() => {
+-    if (timerRef.current) clearInterval(timerRef.current)
+     onRespond?.(requestId, false)
+   }, [onRespond, requestId])
+ 
+   const handleAlwaysAllow = useCallback(() => {
+-    if (timerRef.current) clearInterval(timerRef.current)
+     if (permission.suggestions && onAlwaysAllow) {
+       onAlwaysAllow(requestId, true, permission.suggestions)
+     }
+@@ -179,27 +138,10 @@ export function PermissionCard({
+           </div>
+         )}
+ 
+-        {!resolved && (
+-          <div className="flex items-center gap-2">
+-            <div className="flex-1 h-1 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+-              <div
+-                className={cn(
+-                  'h-full rounded-full transition-all duration-1000 ease-linear',
+-                  countdown < 10 ? 'bg-red-500 animate-pulse' : 'bg-amber-500',
+-                )}
+-                style={{ width: `${(countdown / totalSeconds) * 100}%` }}
+-              />
+-            </div>
+-            <span
+-              className={cn(
+-                'text-xs font-mono tabular-nums w-6 text-right',
+-                countdown < 10
+-                  ? 'text-red-500 dark:text-red-400 font-bold'
+-                  : 'text-gray-500 dark:text-gray-400',
+-              )}
+-            >
+-              {countdown}s
+-            </span>
++        {!resolved && onRespond && (
++          <div className="flex items-center gap-2 text-xs text-amber-600 dark:text-amber-400">
++            <span className="inline-block w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
++            <span>Waiting for your response</span>
+           </div>
+         )}
+       </div>
+diff --git a/packages/shared/src/components/conversation/blocks/shared/SessionInteractionCard.tsx b/packages/shared/src/components/conversation/blocks/shared/SessionInteractionCard.tsx
+index 165a7dc6..42f4adac 100644
+--- a/packages/shared/src/components/conversation/blocks/shared/SessionInteractionCard.tsx
++++ b/packages/shared/src/components/conversation/blocks/shared/SessionInteractionCard.tsx
+@@ -1,4 +1,4 @@
+-import { useCallback } from 'react'
++import { useCallback, useState } from 'react'
+ import {
+   normalizePermissionRequest,
+   normalizeAskQuestion,
+@@ -45,7 +45,11 @@ export type InteractRequest =
+     }
+   | { variant: 'elicitation'; requestId: string; response: string }
+ 
+-export type InteractResult = { ok: true } | { ok: false; status: number; reason: string }
++export interface InteractResult {
++  ok: boolean
++  status?: number
++  reason?: string
++}
+ 
+ export interface SessionInteractionCardProps {
+   sessionId: string
+@@ -54,6 +58,11 @@ export interface SessionInteractionCardProps {
+   respond?: (request: InteractRequest) => Promise<InteractResult>
+ }
+ 
++interface DeliveryError {
++  interactionId: string
++  message: string
++}
++
+ // ── Component ──────────────────────────────────────────────────────
+ 
+ export function SessionInteractionCard({
+@@ -66,7 +75,13 @@ export function SessionInteractionCard({
+     return <CompactInteractionPreview meta={meta} />
+   }
+ 
+-  return <FullCard fullInteraction={fullInteraction} respond={respond} />
++  return (
++    <FullCard
++      key={fullInteraction.requestId ?? fullInteraction.id}
++      fullInteraction={fullInteraction}
++      respond={respond}
++    />
++  )
+ }
+ 
+ // ── Inner card renderer (avoids conditional hooks in parent) ──────
+@@ -79,90 +94,141 @@ function FullCard({
+   respond?: (request: InteractRequest) => Promise<InteractResult>
+ }) {
+   const { variant, data } = fullInteraction
++  const interactionId = fullInteraction.requestId ?? fullInteraction.id
++  const [deliveryError, setDeliveryError] = useState<DeliveryError | null>(null)
++
++  const runRespond = useCallback(
++    async (request: InteractRequest) => {
++      if (!respond) return
++
++      try {
++        const result = await respond(request)
++        if (result.ok) {
++          setDeliveryError((currentError) =>
++            currentError?.interactionId === interactionId ? null : currentError,
++          )
++          return
++        }
++
++        const details = [result.reason, result.status !== undefined ? `status ${result.status}` : '']
++          .filter(Boolean)
++          .join(', ')
++        setDeliveryError({
++          interactionId,
++          message: `Couldn't deliver your response${details ? ` (${details})` : ''}. Try again.`,
++        })
++      } catch {
++        setDeliveryError({
++          interactionId,
++          message: "Couldn't deliver your response. Try again.",
++        })
++      }
++    },
++    [interactionId, respond],
++  )
+ 
+   // ── Permission ────────────────────────────────────────────
+   const handlePermissionRespond = useCallback(
+     (requestId: string, allowed: boolean) => {
+-      respond?.({ variant: 'permission', requestId, allowed })
++      void runRespond({ variant: 'permission', requestId, allowed })
+     },
+-    [respond],
++    [runRespond],
+   )
+ 
+   const handlePermissionAlwaysAllow = useCallback(
+     (requestId: string, allowed: boolean, updatedPermissions: unknown[]) => {
+-      respond?.({ variant: 'permission', requestId, allowed, updatedPermissions })
++      void runRespond({ variant: 'permission', requestId, allowed, updatedPermissions })
+     },
+-    [respond],
++    [runRespond],
+   )
+ 
+   // ── Question ──────────────────────────────────────────────
+   const handleQuestionAnswer = useCallback(
+     (requestId: string, answers: Record<string, string>) => {
+-      respond?.({ variant: 'question', requestId, answers })
++      void runRespond({ variant: 'question', requestId, answers })
+     },
+-    [respond],
++    [runRespond],
+   )
+ 
+   // ── Plan ──────────────────────────────────────────────────
+   const handlePlanApprove = useCallback(
+     (requestId: string, approved: boolean, feedback?: string, bypassPermissions?: boolean) => {
+-      respond?.({ variant: 'plan', requestId, approved, feedback, bypassPermissions })
++      void runRespond({ variant: 'plan', requestId, approved, feedback, bypassPermissions })
+     },
+-    [respond],
++    [runRespond],
+   )
+ 
+   // ── Elicitation ───────────────────────────────────────────
+   const handleElicitationSubmit = useCallback(
+     (requestId: string, response: string) => {
+-      respond?.({ variant: 'elicitation', requestId, response })
++      void runRespond({ variant: 'elicitation', requestId, response })
+     },
+-    [respond],
++    [runRespond],
+   )
+ 
+-  switch (variant) {
+-    case 'permission': {
+-      const permission = normalizePermissionRequest(data)
+-      if (!permission) return <InteractionError variant="permission" />
+-      return (
+-        <PermissionCard
+-          permission={permission}
+-          onRespond={respond ? handlePermissionRespond : undefined}
+-          onAlwaysAllow={
+-            respond && permission.suggestions?.length ? handlePermissionAlwaysAllow : undefined
+-          }
+-        />
+-      )
+-    }
+-
+-    case 'question': {
+-      const question = normalizeAskQuestion(data)
+-      if (!question) return <InteractionError variant="question" />
+-      return (
+-        <AskUserQuestionCard
+-          question={question}
+-          onAnswer={respond ? handleQuestionAnswer : undefined}
+-        />
+-      )
++  const card = (() => {
++    switch (variant) {
++      case 'permission': {
++        const permission = normalizePermissionRequest(data)
++        if (!permission) return <InteractionError variant="permission" />
++        return (
++          <PermissionCard
++            permission={permission}
++            onRespond={respond ? handlePermissionRespond : undefined}
++            onAlwaysAllow={
++              respond && permission.suggestions?.length ? handlePermissionAlwaysAllow : undefined
++            }
++          />
++        )
++      }
++
++      case 'question': {
++        const question = normalizeAskQuestion(data)
++        if (!question) return <InteractionError variant="question" />
++        return (
++          <AskUserQuestionCard
++            question={question}
++            onAnswer={respond ? handleQuestionAnswer : undefined}
++          />
++        )
++      }
++
++      case 'plan': {
++        const plan = normalizePlanApproval(data)
++        if (!plan) return <InteractionError variant="plan" />
++        return <PlanApprovalCard plan={plan} onApprove={respond ? handlePlanApprove : undefined} />
++      }
++
++      case 'elicitation': {
++        const elicitation = normalizeElicitation(data)
++        if (!elicitation) return <InteractionError variant="elicitation" />
++        return (
++          <ElicitationCard
++            elicitation={elicitation}
++            onSubmit={respond ? handleElicitationSubmit : undefined}
++          />
++        )
++      }
++
++      default:
++        return <InteractionError variant={variant} />
+     }
+-
+-    case 'plan': {
+-      const plan = normalizePlanApproval(data)
+-      if (!plan) return <InteractionError variant="plan" />
+-      return <PlanApprovalCard plan={plan} onApprove={respond ? handlePlanApprove : undefined} />
+-    }
+-
+-    case 'elicitation': {
+-      const elicitation = normalizeElicitation(data)
+-      if (!elicitation) return <InteractionError variant="elicitation" />
+-      return (
+-        <ElicitationCard
+-          elicitation={elicitation}
+-          onSubmit={respond ? handleElicitationSubmit : undefined}
+-        />
+-      )
+-    }
+-
+-    default:
+-      return <InteractionError variant={variant} />
+-  }
++  })()
++
++  const visibleDeliveryError =
++    deliveryError?.interactionId === interactionId ? deliveryError.message : null
++
++  if (!visibleDeliveryError) return card
++
++  return (
++    <div>
++      <div
++        role="alert"
++        className="mb-1.5 flex items-center gap-2 rounded-md border border-red-200 dark:border-red-800/40 bg-red-50 dark:bg-red-900/20 px-2.5 py-1.5 text-xs text-red-700 dark:text-red-400"
++      >
++        {visibleDeliveryError}
++      </div>
++      {card}
++    </div>
++  )
+ }

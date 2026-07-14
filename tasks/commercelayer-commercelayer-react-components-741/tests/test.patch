@@ -1,0 +1,108 @@
+diff --git a/packages/react-components/specs/orders/hosted-cart.spec.tsx b/packages/react-components/specs/orders/hosted-cart.spec.tsx
+new file mode 100644
+index 00000000..eab43a86
+--- /dev/null
++++ b/packages/react-components/specs/orders/hosted-cart.spec.tsx
+@@ -0,0 +1,102 @@
++import CommerceLayerContext from "#context/CommerceLayerContext"
++import OrderContext, { defaultOrderContext } from "#context/OrderContext"
++import OrderStorageContext from "#context/OrderStorageContext"
++import { HostedCart } from "#components/orders/HostedCart"
++import * as organizationUtils from "#utils/organization"
++import * as applicationLinkUtils from "#utils/getApplicationLink"
++import { render, screen, waitFor } from "@testing-library/react"
++import { vi } from "vitest"
++
++vi.mock("iframe-resizer", () => ({
++  iframeResizer: vi.fn(),
++}))
++
++describe("HostedCart component", () => {
++  beforeEach(() => {
++    localStorage.clear()
++    vi.restoreAllMocks()
++  })
++
++  it("updates minicart url when persistKey changes", async () => {
++    localStorage.setItem("cart-key-1", "order-id-1")
++    localStorage.setItem("cart-key-2", "order-id-2")
++
++    vi.spyOn(organizationUtils, "getOrganizationConfig").mockResolvedValue(null)
++
++    const getApplicationLinkSpy = vi
++      .spyOn(applicationLinkUtils, "getApplicationLink")
++      .mockImplementation(
++        ({ orderId }) => `https://test-cart.local/cart/${orderId}`,
++      )
++
++    const orderContextValue = {
++      ...defaultOrderContext,
++      createOrder: vi.fn().mockResolvedValue("created-order-id"),
++    }
++
++    const commonProps = {
++      clearWhenPlaced: true,
++      getLocalOrder: vi.fn(),
++      setLocalOrder: vi.fn(),
++      deleteLocalOrder: vi.fn(),
++    }
++
++    const { rerender } = render(
++      <CommerceLayerContext.Provider
++        value={{
++          accessToken: "test-token",
++          endpoint: "https://acme.commercelayer.io",
++        }}
++      >
++        <OrderContext.Provider value={orderContextValue}>
++          <OrderStorageContext.Provider
++            value={{
++              persistKey: "cart-key-1",
++              ...commonProps,
++            }}
++          >
++            <HostedCart />
++          </OrderStorageContext.Provider>
++        </OrderContext.Provider>
++      </CommerceLayerContext.Provider>,
++    )
++
++    await waitFor(() => {
++      expect(getApplicationLinkSpy).toHaveBeenCalledWith(
++        expect.objectContaining({ orderId: "order-id-1" }),
++      )
++      expect(screen.getByTitle("Cart").getAttribute("src")).toBe(
++        "https://test-cart.local/cart/order-id-1",
++      )
++    })
++
++    rerender(
++      <CommerceLayerContext.Provider
++        value={{
++          accessToken: "test-token",
++          endpoint: "https://acme.commercelayer.io",
++        }}
++      >
++        <OrderContext.Provider value={orderContextValue}>
++          <OrderStorageContext.Provider
++            value={{
++              persistKey: "cart-key-2",
++              ...commonProps,
++            }}
++          >
++            <HostedCart />
++          </OrderStorageContext.Provider>
++        </OrderContext.Provider>
++      </CommerceLayerContext.Provider>,
++    )
++
++    await waitFor(() => {
++      expect(getApplicationLinkSpy).toHaveBeenCalledWith(
++        expect.objectContaining({ orderId: "order-id-2" }),
++      )
++      expect(screen.getByTitle("Cart").getAttribute("src")).toBe(
++        "https://test-cart.local/cart/order-id-2",
++      )
++    })
++  })
++})

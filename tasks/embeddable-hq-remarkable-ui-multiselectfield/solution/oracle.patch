@@ -1,0 +1,32 @@
+diff --git a/src/components/editors/selects/MultiSelectField/MultiSelectField.tsx b/src/components/editors/selects/MultiSelectField/MultiSelectField.tsx
+index 7289742..c512817 100644
+--- a/src/components/editors/selects/MultiSelectField/MultiSelectField.tsx
++++ b/src/components/editors/selects/MultiSelectField/MultiSelectField.tsx
+@@ -22,6 +22,8 @@ import { TextField } from '../../inputs/TextField/TextField';
+ import { debounce } from '../../../../utils/debounce.utils';
+ import { SelectOptionValue } from '../SingleSelectField/SingleSelectField';
+ 
++const EMPTY_VALUES: never[] = [];
++
+ export type MultiSelectFieldProps<T extends SelectOptionValue> = {
+   startIcon?: React.ComponentType<IconProps>;
+   disabled?: boolean;
+@@ -56,7 +58,7 @@ export function MultiSelectField<T extends SelectOptionValue>({
+   options,
+   placeholder,
+   submitLabel = 'Apply',
+-  values = [],
++  values = EMPTY_VALUES,
+   avoidCollisions,
+   onChange,
+   onPendingChange,
+@@ -77,8 +79,7 @@ export function MultiSelectField<T extends SelectOptionValue>({
+   useEffect(() => {
+     setPreValues(values);
+     onPendingChange?.(values);
+-    // eslint-disable-next-line react-hooks/exhaustive-deps
+-  }, [JSON.stringify(values)]);
++  }, [values, onPendingChange]);
+ 
+   useEffect(() => {
+     if (isLoading) {

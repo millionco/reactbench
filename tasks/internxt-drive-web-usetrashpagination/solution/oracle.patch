@@ -1,0 +1,48 @@
+diff --git a/src/views/Trash/hooks/useTrashPagination.ts b/src/views/Trash/hooks/useTrashPagination.ts
+index 683170c1a..f03a24c92 100644
+--- a/src/views/Trash/hooks/useTrashPagination.ts
++++ b/src/views/Trash/hooks/useTrashPagination.ts
+@@ -1,6 +1,6 @@
+ import errorService from 'services/error.service';
+ import { OrderSettings } from 'app/core/types';
+-import { useState, useCallback, useEffect } from 'react';
++import { useState, useCallback, useEffect, useRef } from 'react';
+ 
+ const TRASH_PAGINATION_OFFSET = 50;
+ 
+@@ -40,12 +40,7 @@ export const useTrashPagination = ({
+   const [isLoadingTrashItems, setIsLoadingTrashItems] = useState(false);
+   const [hasMoreTrashFolders, setHasMoreTrashFolders] = useState(true);
+ 
+-  useEffect(() => {
+-    const isTrashAndNotHasItems = isTrash;
+-    if (isTrashAndNotHasItems) {
+-      getMoreTrashItems().catch((error) => errorService.reportError(error));
+-    }
+-  }, []);
++  const hasFetchedOnMountRef = useRef(false);
+ 
+   const getMoreTrashFolders = useCallback(async () => {
+     setIsLoadingTrashItems(true);
+@@ -85,6 +80,21 @@ export const useTrashPagination = ({
+     return hasMoreTrashFolders ? getMoreTrashFolders() : getMoreTrashFiles();
+   }, [hasMoreTrashFolders, getMoreTrashFolders, getMoreTrashFiles]);
+ 
++  useEffect(() => {
++    if (hasFetchedOnMountRef.current || !isTrash) {
++      return;
++    }
++    hasFetchedOnMountRef.current = true;
++    const fetchInitialTrashItems = async () => {
++      try {
++        await getMoreTrashItems();
++      } catch (error) {
++        errorService.reportError(error);
++      }
++    };
++    void fetchInitialTrashItems();
++  }, [isTrash, getMoreTrashItems]);
++
+   return {
+     isLoadingTrashItems,
+     hasMoreTrashFolders,

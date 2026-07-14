@@ -1,0 +1,427 @@
+diff --git a/src/components/document/history/DocumentHistoryModal.tsx b/src/components/document/history/DocumentHistoryModal.tsx
+index 8f943c07..9538bd5c 100644
+--- a/src/components/document/history/DocumentHistoryModal.tsx
++++ b/src/components/document/history/DocumentHistoryModal.tsx
+@@ -88,122 +88,130 @@ const DIALOG_PAPER_PROPS = {
+   ),
+ };
+ 
+-export function DocumentHistoryModal({
+-  open,
+-  onOpenChange,
+-  viewId,
+-  view,
+-}: {
+-  open: boolean;
+-  onOpenChange: (value: boolean) => void;
++type DateFilter = 'all' | 'last7Days' | 'last30Days' | 'last60Days';
++
++const MILLISECONDS_PER_DAY = 1000 * 60 * 60 * 24;
++
++const matchesDateFilter = (version: CollabVersionRecord, dateFilter: DateFilter, now: number) => {
++  if (dateFilter === 'all') {
++    return true;
++  }
++
++  const diffDays = Math.ceil(Math.abs(now - version.createdAt.getTime()) / MILLISECONDS_PER_DAY);
++
++  if (dateFilter === 'last7Days') {
++    return diffDays <= 7;
++  }
++
++  if (dateFilter === 'last30Days') {
++    return diffDays <= 30;
++  }
++
++  if (dateFilter === 'last60Days') {
++    return diffDays <= 60;
++  }
++
++  return true;
++};
++
++type HistoryModalContentProps = {
+   viewId: string;
++  workspaceId?: string;
++  titleId: string;
++  isPro: boolean;
+   view?: {
+     name: string;
+     icon: ViewIcon | null;
+   };
+-}) {
+-  const { loadViewMeta, createRow, getViewIdFromDatabaseId, loadView, bindViewSync } = useAppOperations();
++  onOpenChange: (value: boolean) => void;
++} & PreviewEditorProps;
++
++function HistoryModalContent({
++  viewId,
++  workspaceId,
++  titleId,
++  isPro,
++  view,
++  onOpenChange,
++  ...editorProps
++}: HistoryModalContentProps) {
+   const { getCollabHistory, previewCollabVersion, revertCollabVersion } = useCollabHistory();
+-  const getSubscriptions = useGetSubscriptions();
+-  const eventEmitter = useEventEmitter();
+-  const getMentionUser = useGetMentionUser();
+-  const loadDatabaseRelations = useLoadDatabaseRelations();
+-  const workspaceId = useCurrentWorkspaceId();
+   const currentUser = useCurrentUser();
+-  const { isPro } = useSubscriptionPlan(getSubscriptions);
+   const { t } = useTranslation();
+-  const titleId = useId();
++
+   const [versions, setVersions] = useState<CollabVersionRecord[]>([]);
+-  const [loading, setLoading] = useState(false);
++  const [loading, setLoading] = useState(true);
+   const [error, setError] = useState<string | null>(null);
+-  const [selectedVersionId, setSelectedVersionId] = useState<string>('');
+-  const [dateFilter, setDateFilter] = useState<'all' | 'last7Days' | 'last30Days' | 'last60Days'>('all');
++  const [userSelectedVersionId, setUserSelectedVersionId] = useState<string>('');
++  const [dateFilter, setDateFilter] = useState<DateFilter>('all');
+   const [onlyShowMine, setOnlyShowMine] = useState(false);
+-  const previewYDocRef = useRef<Map<string, Y.Doc>>(new Map());
++  const previewYDocRef = useRef<Map<string, Y.Doc> | null>(null);
+   const [activeDoc, setActiveDoc] = useState<Y.Doc | null>(null);
+   const [isRestoring, setIsRestoring] = useState(false);
+-  const selectedVersionIdRef = useRef(selectedVersionId);
+-  const activeViewIdRef = useRef(viewId);
+-  const versionsRef = useRef(versions);
+ 
+-  selectedVersionIdRef.current = selectedVersionId;
+-  activeViewIdRef.current = viewId;
+-  versionsRef.current = versions;
++  const getPreviewDocs = useCallback(() => {
++    previewYDocRef.current ??= new Map<string, Y.Doc>();
++    return previewYDocRef.current;
++  }, []);
+ 
+   const visibleVersions = useMemo(() => {
+-    let filtered = [...versions];
++    const now = Date.now();
+ 
+-    if (onlyShowMine && currentUser) {
+-      filtered = filtered.filter((version) => version.editors.some((editor) => editor.toString() === currentUser.uid));
+-    }
++    return versions.filter((version) => {
++      if (onlyShowMine && currentUser) {
++        if (!version.editors.some((editor) => editor.toString() === currentUser.uid)) {
++          return false;
++        }
++      }
+ 
+-    const now = new Date();
++      return matchesDateFilter(version, dateFilter, now);
++    });
++  }, [versions, onlyShowMine, currentUser, dateFilter]);
+ 
+-    filtered = filtered.filter((version) => {
+-      if (dateFilter === 'all') {
+-        return true;
+-      }
++  const selectedVersionId = useMemo(() => {
++    if (visibleVersions.some((version) => version.versionId === userSelectedVersionId)) {
++      return userSelectedVersionId;
++    }
+ 
+-      const diffTime = Math.abs(now.getTime() - version.createdAt.getTime());
+-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
++    return visibleVersions[0]?.versionId ?? '';
++  }, [visibleVersions, userSelectedVersionId]);
+ 
+-      if (dateFilter === 'last7Days') {
+-        return diffDays <= 7;
+-      } else if (dateFilter === 'last30Days') {
+-        return diffDays <= 30;
+-      } else if (dateFilter === 'last60Days') {
+-        return diffDays <= 60;
+-      }
++  const clearPreviewDocs = useCallback(() => {
++    const previewDocs = previewYDocRef.current;
+ 
+-      return true;
+-    });
++    if (!previewDocs) {
++      return;
++    }
+ 
+-    return filtered;
+-  }, [versions, onlyShowMine, currentUser, dateFilter]);
++    previewDocs.forEach((doc) => {
++      doc.destroy();
++    });
++    previewDocs.clear();
++  }, []);
+ 
+   const refreshVersions = useCallback(async () => {
+     if (!viewId || !getCollabHistory) {
+       return [];
+     }
+ 
+-    const requestViewId = viewId;
+-
+     setLoading(true);
+     setError(null);
+     try {
+-      const data = await getCollabHistory(requestViewId);
+-
+-      if (activeViewIdRef.current !== requestViewId) {
+-        return [];
+-      }
+-
++      const data = await getCollabHistory(viewId);
+       const activeVersions = data.filter((version) => !version.deletedAt);
+ 
+       setVersions(activeVersions);
+       return activeVersions;
+     } catch (error) {
+-      if (activeViewIdRef.current !== requestViewId) {
+-        return [];
+-      }
+-
+       setError(error instanceof Error ? error.message : String(error));
+       return [];
+     } finally {
+-      if (activeViewIdRef.current === requestViewId) {
+-        setLoading(false);
+-      }
++      setLoading(false);
+     }
+   }, [viewId, getCollabHistory]);
+ 
+-  const clearPreviewDocs = useCallback(() => {
+-    previewYDocRef.current.forEach((doc) => {
+-      doc.destroy();
+-    });
+-    previewYDocRef.current.clear();
+-  }, []);
+-
+   const handleRestore = useCallback(async () => {
+-    const versionId = selectedVersionIdRef.current;
++    const versionId = selectedVersionId;
+ 
+     if (!viewId || !versionId || !revertCollabVersion) {
+       return;
+@@ -212,7 +220,7 @@ export function DocumentHistoryModal({
+     setIsRestoring(true);
+     setError(null);
+     try {
+-      const versionRecord = versionsRef.current.find((v) => v.versionId === versionId);
++      const versionRecord = versions.find((v) => v.versionId === versionId);
+ 
+       Log.debug('[Version] Reverting document to version', { viewId, versionId, createdAt: versionRecord?.createdAt });
+       await revertCollabVersion(viewId, versionId);
+@@ -234,47 +242,24 @@ export function DocumentHistoryModal({
+     } finally {
+       setIsRestoring(false);
+     }
+-  }, [viewId, revertCollabVersion, refreshVersions, onOpenChange]);
++  }, [viewId, revertCollabVersion, refreshVersions, onOpenChange, selectedVersionId, versions]);
+ 
+   const handleClose = useCallback(() => onOpenChange(false), [onOpenChange]);
+ 
+   useEffect(() => {
+-    if (!open) {
+-      return;
+-    }
+-
+     void refreshVersions();
+-  }, [open, refreshVersions]);
++  }, [refreshVersions]);
+ 
+   useEffect(() => {
+-    if (visibleVersions.length === 0) {
+-      if (selectedVersionIdRef.current) {
+-        setSelectedVersionId('');
+-      }
+-
+-      return;
+-    }
+-
+-    if (!visibleVersions.some((v) => v.versionId === selectedVersionIdRef.current)) {
+-      setSelectedVersionId(visibleVersions[0].versionId);
+-    }
+-  }, [visibleVersions]);
+-
+-  useEffect(() => {
+-    if (!open) {
+-      setActiveDoc(null);
+-      clearPreviewDocs();
+-      return;
+-    }
+-
+-    if (!selectedVersionId || !viewId || !previewCollabVersion) {
++    if (!selectedVersionId || !previewCollabVersion) {
+       setActiveDoc(null);
+       return;
+     }
+ 
+     let cancelled = false;
+     const previewVersionId = selectedVersionId;
+-    const cachedDoc = previewYDocRef.current.get(previewVersionId);
++    const previewDocs = getPreviewDocs();
++    const cachedDoc = previewDocs.get(previewVersionId);
+ 
+     if (cachedDoc) {
+       setActiveDoc(cachedDoc);
+@@ -294,7 +279,7 @@ export function DocumentHistoryModal({
+           return;
+         }
+ 
+-        previewYDocRef.current.set(previewVersionId, doc);
++        previewDocs.set(previewVersionId, doc);
+         setActiveDoc(doc);
+       } catch (error) {
+         if (!cancelled) {
+@@ -307,16 +292,7 @@ export function DocumentHistoryModal({
+     return () => {
+       cancelled = true;
+     };
+-  }, [open, previewCollabVersion, selectedVersionId, viewId, clearPreviewDocs]);
+-
+-  useEffect(() => {
+-    setVersions([]);
+-    setSelectedVersionId('');
+-    setError(null);
+-    setLoading(open);
+-    setActiveDoc(null);
+-    clearPreviewDocs();
+-  }, [viewId, open, clearPreviewDocs]);
++  }, [previewCollabVersion, selectedVersionId, viewId, getPreviewDocs]);
+ 
+   useEffect(() => {
+     return () => {
+@@ -324,6 +300,67 @@ export function DocumentHistoryModal({
+     };
+   }, [clearPreviewDocs]);
+ 
++  return (
++    <DialogContent data-testid='version-history-modal' className='flex h-full w-full overflow-hidden p-0'>
++      <div className='order-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-t-2xl md:order-1 md:rounded-l-2xl md:rounded-tr-none'>
++        <DialogTitle id={titleId} className='border-b border-border px-6 py-4 text-base font-bold text-text-primary'>
++          {view?.name || t('untitled')}
++        </DialogTitle>
++        <div className='min-h-0 flex-1 overflow-hidden'>
++          <VersionPreviewBody
++            loading={loading}
++            error={error}
++            activeDoc={activeDoc}
++            workspaceId={workspaceId}
++            viewId={viewId}
++            {...editorProps}
++          />
++        </div>
++      </div>
++      <div className='order-1 flex w-full max-w-full flex-col rounded-r-2xl border-border-primary bg-surface-container-layer-01 md:order-2 md:w-[280px] md:border-l'>
++        <VersionList
++          versions={visibleVersions}
++          selectedVersionId={selectedVersionId}
++          onSelect={setUserSelectedVersionId}
++          dateFilter={dateFilter}
++          onlyShowMine={onlyShowMine}
++          onDateFilterChange={setDateFilter}
++          onOnlyShowMineChange={setOnlyShowMine}
++          onRestoreClicked={handleRestore}
++          isRestoring={isRestoring}
++          onClose={handleClose}
++          isPro={isPro}
++        />
++      </div>
++    </DialogContent>
++  );
++}
++
++export function DocumentHistoryModal({
++  open,
++  onOpenChange,
++  viewId,
++  view,
++}: {
++  open: boolean;
++  onOpenChange: (value: boolean) => void;
++  viewId: string;
++  view?: {
++    name: string;
++    icon: ViewIcon | null;
++  };
++}) {
++  const { loadViewMeta, createRow, getViewIdFromDatabaseId, loadView, bindViewSync } = useAppOperations();
++  const getSubscriptions = useGetSubscriptions();
++  const eventEmitter = useEventEmitter();
++  const getMentionUser = useGetMentionUser();
++  const loadDatabaseRelations = useLoadDatabaseRelations();
++  const workspaceId = useCurrentWorkspaceId();
++  const { isPro } = useSubscriptionPlan(getSubscriptions);
++  const titleId = useId();
++
++  const handleClose = useCallback(() => onOpenChange(false), [onOpenChange]);
++
+   return (
+     <Dialog
+       open={open}
+@@ -337,45 +374,23 @@ export function DocumentHistoryModal({
+       disableRestoreFocus
+       PaperProps={DIALOG_PAPER_PROPS}
+     >
+-      <DialogContent data-testid='version-history-modal' className='flex h-full w-full overflow-hidden p-0'>
+-        <div className='order-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-t-2xl md:order-1 md:rounded-l-2xl md:rounded-tr-none'>
+-          <DialogTitle id={titleId} className='border-b border-border px-6 py-4 text-base font-bold text-text-primary'>
+-            {view?.name || t('untitled')}
+-          </DialogTitle>
+-          <div className='min-h-0 flex-1 overflow-hidden'>
+-            <VersionPreviewBody
+-              loading={loading}
+-              error={error}
+-              activeDoc={activeDoc}
+-              workspaceId={workspaceId}
+-              viewId={viewId}
+-              loadView={loadView}
+-              bindViewSync={bindViewSync}
+-              loadViewMeta={loadViewMeta}
+-              createRow={createRow}
+-              eventEmitter={eventEmitter}
+-              getMentionUser={getMentionUser}
+-              getViewIdFromDatabaseId={getViewIdFromDatabaseId}
+-              loadDatabaseRelations={loadDatabaseRelations}
+-            />
+-          </div>
+-        </div>
+-        <div className='order-1 flex w-full max-w-full flex-col rounded-r-2xl border-border-primary bg-surface-container-layer-01 md:order-2 md:w-[280px] md:border-l'>
+-          <VersionList
+-            versions={visibleVersions}
+-            selectedVersionId={selectedVersionId}
+-            onSelect={setSelectedVersionId}
+-            dateFilter={dateFilter}
+-            onlyShowMine={onlyShowMine}
+-            onDateFilterChange={setDateFilter}
+-            onOnlyShowMineChange={setOnlyShowMine}
+-            onRestoreClicked={handleRestore}
+-            isRestoring={isRestoring}
+-            onClose={handleClose}
+-            isPro={isPro}
+-          />
+-        </div>
+-      </DialogContent>
++      <HistoryModalContent
++        key={viewId}
++        viewId={viewId}
++        workspaceId={workspaceId}
++        titleId={titleId}
++        isPro={isPro}
++        view={view}
++        onOpenChange={onOpenChange}
++        loadView={loadView}
++        bindViewSync={bindViewSync}
++        loadViewMeta={loadViewMeta}
++        createRow={createRow}
++        eventEmitter={eventEmitter}
++        getMentionUser={getMentionUser}
++        getViewIdFromDatabaseId={getViewIdFromDatabaseId}
++        loadDatabaseRelations={loadDatabaseRelations}
++      />
+     </Dialog>
+   );
+ }

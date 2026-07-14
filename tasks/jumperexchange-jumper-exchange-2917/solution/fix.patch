@@ -1,0 +1,376 @@
+diff --git a/src/components/Background.tsx b/src/components/Background.tsx
+index c275750..50e58ed 100644
+--- a/src/components/Background.tsx
++++ b/src/components/Background.tsx
+@@ -24,14 +24,16 @@ function Background() {
+   const configTheme = useThemeStore((state) => state.configTheme);
+   const { shouldShowForTheme } = useThemeConditionsMet();
+ 
+-  const backgroundImageUrl = useGetPartnerThemeImage();
++  const { url: backgroundImageUrl, mime: backgroundImageMime } =
++    useGetPartnerThemeImage();
+ 
+   return (
+     <BackgroundContainer id="background-root">
+       <AnimatedBackgroundImage
+         src={backgroundImageUrl}
++        mime={backgroundImageMime}
+         sx={{
+-          '& > img': {
++          '& > img, & > video': {
+             objectPosition: configTheme?.backgroundImagePosition ?? 'center',
+           },
+         }}
+diff --git a/src/components/core/AnimatedBackgroundImage/AnimatedBackgroundImage.tsx b/src/components/core/AnimatedBackgroundImage/AnimatedBackgroundImage.tsx
+index 93c4471..4c18864 100644
+--- a/src/components/core/AnimatedBackgroundImage/AnimatedBackgroundImage.tsx
++++ b/src/components/core/AnimatedBackgroundImage/AnimatedBackgroundImage.tsx
+@@ -1,17 +1,110 @@
++'use client';
++
++import Box from '@mui/material/Box';
++import type { SxProps, Theme } from '@mui/material/styles';
+ import { AnimatePresence } from 'motion/react';
+-import { AnimatedBackgroundImageContainer } from './AnimatedBackgroundImage.styles';
+ import Image from 'next/image';
+-import type { SxProps, Theme } from '@mui/material/styles';
++import { useEffect, useRef, useState } from 'react';
++import { canBrowserPlayVideoMime, isVideoMime } from '@/utils/isVideoMime';
++import { AnimatedBackgroundImageContainer } from './AnimatedBackgroundImage.styles';
+ 
+ export interface AnimatedBackgroundImageProps {
+   src?: string | null;
++  mime?: string | null;
+   sx?: SxProps<Theme>;
+ }
+ 
++interface AnimatedBackgroundVideoProps {
++  src: string;
++  mime: string;
++  onPlaybackUnavailable: () => void;
++}
++
++const AnimatedBackgroundVideo = ({
++  src,
++  mime,
++  onPlaybackUnavailable,
++}: AnimatedBackgroundVideoProps) => {
++  const videoRef = useRef<HTMLVideoElement>(null);
++
++  useEffect(() => {
++    if (!canBrowserPlayVideoMime(mime)) {
++      onPlaybackUnavailable();
++      return;
++    }
++
++    const video = videoRef.current;
++
++    if (!video) {
++      return;
++    }
++
++    video.muted = true;
++
++    const handlePlaybackFailure = () => {
++      onPlaybackUnavailable();
++    };
++
++    const playVideo = () => {
++      void video.play().catch(handlePlaybackFailure);
++    };
++
++    video.addEventListener('error', handlePlaybackFailure);
++
++    if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
++      playVideo();
++    } else {
++      video.addEventListener('loadeddata', playVideo);
++    }
++
++    return () => {
++      video.removeEventListener('error', handlePlaybackFailure);
++      video.removeEventListener('loadeddata', playVideo);
++    };
++  }, [mime, onPlaybackUnavailable, src]);
++
++  return (
++    <Box
++      component="video"
++      ref={videoRef}
++      src={src}
++      autoPlay
++      muted
++      loop
++      playsInline
++      preload="auto"
++      aria-hidden
++      sx={{
++        position: 'absolute',
++        inset: 0,
++        width: '100%',
++        height: '100%',
++        objectFit: 'cover',
++      }}
++    />
++  );
++};
++
++const getMediaKey = (
++  src?: string | null,
++  mime?: string | null,
++): string => `${src ?? ''}::${mime ?? ''}`;
++
+ export const AnimatedBackgroundImage = ({
+   src,
++  mime,
+   sx,
+ }: AnimatedBackgroundImageProps) => {
++  const [failedVideoKey, setFailedVideoKey] = useState<string | null>(null);
++
++  const mediaKey = getMediaKey(src, mime);
++  const isVideoPlaybackUnavailable = failedVideoKey === mediaKey;
++
++  const videoBackground =
++    src && mime && isVideoMime(mime) && !isVideoPlaybackUnavailable
++      ? { src, mime }
++      : null;
++
+   return (
+     <AnimatePresence mode="wait">
+       {src && (
+@@ -26,16 +119,24 @@ export const AnimatedBackgroundImage = ({
+           }}
+           sx={sx}
+         >
+-          <Image
+-            src={src}
+-            alt="Animated background image"
+-            fill
+-            priority
+-            sizes="100vw"
+-            style={{
+-              objectFit: 'cover',
+-            }}
+-          />
++          {videoBackground ? (
++            <AnimatedBackgroundVideo
++              src={videoBackground.src}
++              mime={videoBackground.mime}
++              onPlaybackUnavailable={() => setFailedVideoKey(mediaKey)}
++            />
++          ) : (
++            <Image
++              src={src}
++              alt="Animated background image"
++              fill
++              priority
++              sizes="100vw"
++              style={{
++                objectFit: 'cover',
++              }}
++            />
++          )}
+         </AnimatedBackgroundImageContainer>
+       )}
+     </AnimatePresence>
+diff --git a/src/hooks/theme/useGetPartnerThemeImage.ts b/src/hooks/theme/useGetPartnerThemeImage.ts
+index ca708ea..6035fe6 100644
+--- a/src/hooks/theme/useGetPartnerThemeImage.ts
++++ b/src/hooks/theme/useGetPartnerThemeImage.ts
+@@ -5,9 +5,12 @@ export const useGetPartnerThemeImage = () => {
+   const configTheme = useThemeStore((state) => state.configTheme);
+   const { shouldShowForTheme } = useThemeConditionsMet();
+ 
+-  const imageUrl = shouldShowForTheme
+-    ? configTheme?.backgroundImageUrl?.href
+-    : null;
++  if (!shouldShowForTheme) {
++    return { url: null, mime: null };
++  }
+ 
+-  return imageUrl;
++  return {
++    url: configTheme?.backgroundImageUrl?.href ?? null,
++    mime: configTheme?.backgroundImageMime ?? null,
++  };
+ };
+diff --git a/src/types/PartnerThemeConfig.ts b/src/types/PartnerThemeConfig.ts
+index 89e7623..2c7f12c 100644
+--- a/src/types/PartnerThemeConfig.ts
++++ b/src/types/PartnerThemeConfig.ts
+@@ -11,6 +11,7 @@ export interface PartnerThemeConfig {
+   availableThemeModes: string[];
+   backgroundColor: string | null;
+   backgroundImageUrl: URL | null;
++  backgroundImageMime: string | null;
+   backgroundImagePosition: string;
+   footerImageUrl: URL | null;
+   logo:
+diff --git a/src/utils/formatTheme.ts b/src/utils/formatTheme.ts
+index 1e91a91..5eea3ec 100644
+--- a/src/utils/formatTheme.ts
++++ b/src/utils/formatTheme.ts
+@@ -3,18 +3,33 @@ import { getStrapiUrl } from '@/hooks/useStrapi';
+ import type { PartnerThemeConfig } from '@/types/PartnerThemeConfig';
+ import type { PartnerThemesAttributes } from '@/types/strapi';
+ 
+-function getImageUrl(
++function getThemeMedia(
+   theme: PartnerThemesAttributes,
+   imageType: 'BackgroundImage' | 'FooterImage' | 'Logo',
+   defaultMode: 'light' | 'dark' = 'dark',
+-): URL | null {
++): { url: URL; mime: string | null } | null {
+   const baseStrapiUrl = getStrapiUrl(STRAPI_PARTNER_THEMES);
+ 
+   const imageLight = theme[`${imageType}Light`];
+   const imageDark = theme[`${imageType}Dark`];
+-  const imageUrl = defaultMode === 'light' ? imageLight?.url : imageDark?.url;
++  const media = defaultMode === 'light' ? imageLight : imageDark;
++
++  if (!media?.url) {
++    return null;
++  }
+ 
+-  return imageUrl ? new URL(imageUrl, baseStrapiUrl) : null;
++  return {
++    url: new URL(media.url, baseStrapiUrl),
++    mime: media.mime?.trim() || null,
++  };
++}
++
++function getImageUrl(
++  theme: PartnerThemesAttributes,
++  imageType: 'BackgroundImage' | 'FooterImage' | 'Logo',
++  defaultMode: 'light' | 'dark' = 'dark',
++): URL | null {
++  return getThemeMedia(theme, imageType, defaultMode)?.url ?? null;
+ }
+ 
+ export function getAvailableThemeModes(
+@@ -68,11 +83,13 @@ export function formatConfig(
+ 
+   const defaultMode = isDarkOrLightThemeMode(theme);
+   const themeModes = getAvailableThemeModes(theme);
++  const backgroundMedia = getThemeMedia(theme, 'BackgroundImage', defaultMode);
+   const result = {
+     availableThemeModes: themeModes,
+     backgroundColor:
+       theme.BackgroundColorDark || theme.BackgroundColorLight || null,
+-    backgroundImageUrl: getImageUrl(theme, 'BackgroundImage', defaultMode),
++    backgroundImageUrl: backgroundMedia?.url ?? null,
++    backgroundImageMime: backgroundMedia?.mime ?? null,
+     backgroundImagePosition:
+       (theme.lightConfig || theme.darkConfig)?.customization
+         ?.backgroundImagePosition || 'center',
+diff --git a/src/utils/isVideoMime.spec.ts b/src/utils/isVideoMime.spec.ts
+new file mode 100644
+index 0000000..518bf78
+--- /dev/null
++++ b/src/utils/isVideoMime.spec.ts
+@@ -0,0 +1,63 @@
++import { afterEach, describe, expect, it, vi } from 'vitest';
++import { canBrowserPlayVideoMime, isVideoMime } from './isVideoMime';
++
++describe('isVideoMime', () => {
++  it('returns true for browser-playable video MIME types', () => {
++    expect(isVideoMime('video/mp4')).toBe(true);
++    expect(isVideoMime('video/webm')).toBe(true);
++    expect(isVideoMime('video/ogg')).toBe(true);
++  });
++
++  it('normalizes MIME values before checking', () => {
++    expect(isVideoMime('  VIDEO/MP4  ')).toBe(true);
++    expect(isVideoMime('video/mp4; codecs="avc1.42E01E"')).toBe(true);
++  });
++
++  it('returns false for unsupported or non-video MIME types', () => {
++    expect(isVideoMime('video/quicktime')).toBe(false);
++    expect(isVideoMime('video/x-msvideo')).toBe(false);
++    expect(isVideoMime('image/png')).toBe(false);
++    expect(isVideoMime(null)).toBe(false);
++    expect(isVideoMime(undefined)).toBe(false);
++    expect(isVideoMime('')).toBe(false);
++  });
++});
++
++describe('canBrowserPlayVideoMime', () => {
++  afterEach(() => {
++    vi.unstubAllGlobals();
++  });
++
++  it('falls back to the playable MIME whitelist when document is unavailable', () => {
++    vi.stubGlobal('document', undefined);
++
++    expect(canBrowserPlayVideoMime('video/mp4')).toBe(true);
++    expect(canBrowserPlayVideoMime('video/webm')).toBe(true);
++    expect(canBrowserPlayVideoMime('video/quicktime')).toBe(false);
++  });
++
++  it('returns false when the browser cannot play the MIME type', () => {
++    const canPlayType = vi.fn().mockReturnValue('');
++
++    vi.stubGlobal('document', {
++      createElement: () => ({ canPlayType }),
++    });
++
++    expect(canBrowserPlayVideoMime('video/mp4')).toBe(false);
++    expect(canPlayType).toHaveBeenCalledWith('video/mp4');
++  });
++
++  it('returns true when the browser reports maybe or probably support', () => {
++    const canPlayType = vi
++      .fn()
++      .mockReturnValueOnce('maybe')
++      .mockReturnValueOnce('probably');
++
++    vi.stubGlobal('document', {
++      createElement: () => ({ canPlayType }),
++    });
++
++    expect(canBrowserPlayVideoMime('video/mp4')).toBe(true);
++    expect(canBrowserPlayVideoMime('video/webm')).toBe(true);
++  });
++});
+diff --git a/src/utils/isVideoMime.ts b/src/utils/isVideoMime.ts
+new file mode 100644
+index 0000000..3644e72
+--- /dev/null
++++ b/src/utils/isVideoMime.ts
+@@ -0,0 +1,36 @@
++const PLAYABLE_VIDEO_MIME_TYPES = new Set([
++  'video/mp4',
++  'video/webm',
++  'video/ogg',
++]);
++
++const normalizeMime = (mime: string): string => mime.trim().toLowerCase();
++
++const getBaseMimeType = (mime: string): string =>
++  normalizeMime(mime).split(';')[0]?.trim() ?? '';
++
++export const canBrowserPlayVideoMime = (mime: string): boolean => {
++  if (typeof document === 'undefined') {
++    return PLAYABLE_VIDEO_MIME_TYPES.has(getBaseMimeType(mime));
++  }
++
++  const support = document
++    .createElement('video')
++    .canPlayType(normalizeMime(mime));
++
++  return support === 'probably' || support === 'maybe';
++};
++
++export const isVideoMime = (mime?: string | null): boolean => {
++  if (typeof mime !== 'string' || !mime.trim()) {
++    return false;
++  }
++
++  const baseMime = getBaseMimeType(mime);
++
++  if (!baseMime.startsWith('video/')) {
++    return false;
++  }
++
++  return PLAYABLE_VIDEO_MIME_TYPES.has(baseMime);
++};

@@ -1,0 +1,34 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "isolatedModules": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "baseUrl": ".",
+    "paths": {
+      "~app/*": ["./app-src/*"]
+    }
+  },
+  "include": [
+    "specs",
+    "e2e",
+    "src",
+    "vite.config.ts",
+    "playwright.config.ts",
+    "setup.ts",
+    "coverage.ts",
+    "global-setup.ts",
+    "playwright-constants.ts",
+    "custom-test-harness.json"
+  ]
+}

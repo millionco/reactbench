@@ -1,0 +1,186 @@
+diff --git a/components/AutoComplete/AutoComplete.jsx b/components/AutoComplete/AutoComplete.jsx
+index 083df918..4367f05d 100644
+--- a/components/AutoComplete/AutoComplete.jsx
++++ b/components/AutoComplete/AutoComplete.jsx
+@@ -164,11 +164,9 @@ const AutoComplete = ({
+ }) => {
+   const [userTypedValue, setUserTypedValue] = useState(value);
+   const [filterSuggestions, setFilterSuggestions] = useState(suggestions);
+-  const [filterSuggestionsLength, setFilterSuggestionsLength] = useState(
+-    filterSuggestions.length,
+-  );
+   const [showSuggestions, setShowSuggestions] = useState(false);
+   const [cursor, setCursor] = useState(NON_FOCUSABLE_SUGGESTION_INDEX);
++  const filterSuggestionsLength = filterSuggestions?.length;
+   const wrapperRef = useRef();
+   const listOptions = useRef();
+   const autoInputRef = useRef(null);
+@@ -242,6 +240,48 @@ const AutoComplete = ({
+     }
+   };
+ 
++  const handleArrowDown = () => {
++    if (showSuggestions && filterSuggestionsLength) {
++      const selectedCursor =
++        cursor < filterSuggestionsLength - 1 ? cursor + 1 : cursor;
++      setCursor(selectedCursor);
++      listOptions.current.children[selectedCursor].focus();
++    }
++  };
++
++  const handleArrowUp = () => {
++    if (showSuggestions && filterSuggestionsLength && cursor > 0) {
++      const selectedCursor = cursor > 0 ? cursor - 1 : cursor;
++      setCursor(selectedCursor);
++      listOptions.current.children[selectedCursor].focus();
++    }
++    if (cursor === 0) {
++      focusOnInput();
++    }
++  };
++
++  const handleEnter = () => {
++    if (showSuggestions && filterSuggestionsLength) {
++      setUserTypedValue(filterSuggestions[cursor]);
++      onSelectedItem(filterSuggestions[cursor]);
++      setShowSuggestions(false);
++      focusOnInput();
++    }
++  };
++
++  const handleTab = () => {
++    if (showSuggestions && cursor !== NON_FOCUSABLE_SUGGESTION_INDEX) {
++      setUserTypedValue(filterSuggestions[cursor]);
++      onSelectedItem(filterSuggestions[cursor]);
++    }
++    setShowSuggestions(false);
++  };
++
++  useKeyPress('ArrowDown', handleArrowDown);
++  useKeyPress('ArrowUp', handleArrowUp);
++  useKeyPress('Enter', handleEnter);
++  useKeyPress('Tab', handleTab);
++
+   const generateSuggestions = () =>
+     showSuggestions && filterSuggestions ? (
+       <List
+@@ -274,58 +314,6 @@ const AutoComplete = ({
+     return assistiveDescriptionDefault;
+   };
+ 
+-  const downPress = useKeyPress('ArrowDown');
+-  const upPress = useKeyPress('ArrowUp');
+-  const enterPress = useKeyPress('Enter');
+-  const tabPress = useKeyPress('Tab');
+-
+-  useEffect(() => {
+-    setFilterSuggestionsLength(filterSuggestions?.length);
+-  }, [filterSuggestions]);
+-
+-  /* istanbul ignore next */
+-  useEffect(() => {
+-    if (showSuggestions && filterSuggestionsLength && downPress) {
+-      const selectedCursor =
+-        cursor < filterSuggestionsLength - 1 ? cursor + 1 : cursor;
+-      setCursor(selectedCursor);
+-      listOptions.current.children[selectedCursor].focus();
+-    }
+-  }, [downPress]);
+-
+-  /* istanbul ignore next */
+-  useEffect(() => {
+-    if (showSuggestions && filterSuggestionsLength && upPress && cursor > 0) {
+-      const selectedCursor = cursor > 0 ? cursor - 1 : cursor;
+-      setCursor(selectedCursor);
+-      listOptions.current.children[selectedCursor].focus();
+-    }
+-    if (upPress && cursor === 0) {
+-      focusOnInput();
+-    }
+-  }, [upPress]);
+-
+-  /* istanbul ignore next */
+-  useEffect(() => {
+-    if (showSuggestions && filterSuggestionsLength && enterPress) {
+-      setUserTypedValue(filterSuggestions[cursor]);
+-      onSelectedItem(filterSuggestions[cursor]);
+-      setShowSuggestions(false);
+-      focusOnInput();
+-    }
+-  }, [cursor, enterPress]);
+-
+-  /* istanbul ignore next */
+-  useEffect(() => {
+-    if (tabPress) {
+-      if (showSuggestions && cursor !== NON_FOCUSABLE_SUGGESTION_INDEX) {
+-        setUserTypedValue(filterSuggestions[cursor]);
+-        onSelectedItem(filterSuggestions[cursor]);
+-      }
+-      setShowSuggestions(false);
+-    }
+-  }, [tabPress]);
+-
+   useEffect(() => {
+     window.addEventListener('click', handleClickOutside);
+     window.addEventListener('keydown', handleEscPress);
+diff --git a/components/AutoComplete/SubComponents/UseKeyPress.jsx b/components/AutoComplete/SubComponents/UseKeyPress.jsx
+index 8a7ad486..3bae59be 100644
+--- a/components/AutoComplete/SubComponents/UseKeyPress.jsx
++++ b/components/AutoComplete/SubComponents/UseKeyPress.jsx
+@@ -1,23 +1,29 @@
+-import { useState, useEffect } from 'react';
++import { useEffect, useRef } from 'react';
+ 
+-const useKeyPress = (targetKey) => {
+-  const [keyPressed, setKeyPressed] = useState(false);
++const useKeyPress = (targetKey, handleKeyPress) => {
++  const isKeyPressedRef = useRef(false);
++  const handleKeyPressRef = useRef(handleKeyPress);
+ 
+-  /* istanbul ignore next */
+-  const downHandler = ({ key }) => {
+-    if (key === targetKey) {
+-      setKeyPressed(true);
+-    }
+-  };
+-
+-  /* istanbul ignore next */
+-  const upHandler = ({ key }) => {
+-    if (key === targetKey) {
+-      setKeyPressed(false);
+-    }
+-  };
++  useEffect(() => {
++    handleKeyPressRef.current = handleKeyPress;
++  });
+ 
+   useEffect(() => {
++    /* istanbul ignore next */
++    const downHandler = ({ key }) => {
++      if (key === targetKey && !isKeyPressedRef.current) {
++        isKeyPressedRef.current = true;
++        handleKeyPressRef.current();
++      }
++    };
++
++    /* istanbul ignore next */
++    const upHandler = ({ key }) => {
++      if (key === targetKey) {
++        isKeyPressedRef.current = false;
++      }
++    };
++
+     window.addEventListener('keydown', downHandler);
+     window.addEventListener('keyup', upHandler);
+ 
+@@ -25,9 +31,7 @@ const useKeyPress = (targetKey) => {
+       window.removeEventListener('keydown', downHandler);
+       window.removeEventListener('keyup', upHandler);
+     };
+-  }, []);
+-
+-  return keyPressed;
++  }, [targetKey]);
+ };
+ 
+ export default useKeyPress;

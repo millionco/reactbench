@@ -1,0 +1,111 @@
+diff --git a/src/components/image/index.tsx b/src/components/image/index.tsx
+index 0d20d10..2015298 100644
+--- a/src/components/image/index.tsx
++++ b/src/components/image/index.tsx
+@@ -20,7 +20,7 @@
+ //
+ 
+ import type { ReactElement } from "react";
+-import React, { useState, useEffect, useContext } from "react";
++import React, { useState, useEffect, useMemo, useContext } from "react";
+ import type { SolidDataset } from "@inrupt/solid-client";
+ import {
+   addUrl,
+@@ -80,44 +80,29 @@ export function Image({
+   });
+ 
+   const { value, thing, error: thingError } = values;
+-  let valueError;
+-  if (!value) {
+-    valueError = new Error("No value found for property.");
+-  }
++  const valueError = value ? undefined : new Error("No value found for property.");
+   const isFetchingThing = !thing && !thingError;
+ 
+-  const [error, setError] = useState<Error | undefined>(
+-    thingError ?? valueError,
++  const [actionError, setActionError] = useState<Error | undefined>();
++  const [uploadedObjectUrl, setUploadedObjectUrl] = useState<string | undefined>();
++
++  const { data, error: imgError, inProgress: fetchingFileInProgress } = useFile(
++    value as string,
+   );
+ 
+-  useEffect(() => {
+-    if (error) {
+-      if (onError) {
+-        onError(error);
+-      }
+-    }
+-  }, [error, onError, ErrorComponent]);
++  const fetchedObjectUrl = useMemo(
++    () => (data ? URL.createObjectURL(data) : undefined),
++    [data],
++  );
+ 
+-  const [imgObjectUrl, setImgObjectUrl] = useState<string | undefined>();
+-  const {
+-    data,
+-    error: imgError,
+-    inProgress: fetchingFileInProgress,
+-  } = useFile(value as string);
++  const error = actionError ?? imgError ?? thingError ?? valueError;
++  const imgObjectUrl = uploadedObjectUrl ?? fetchedObjectUrl;
+ 
+   useEffect(() => {
+-    if (fetchingFileInProgress) {
+-      return;
+-    }
+-    if (imgError) {
+-      setError(imgError);
+-      return;
+-    }
+-    const imageObjectUrl = data && URL.createObjectURL(data);
+-    if (imageObjectUrl) {
+-      setImgObjectUrl(imageObjectUrl);
++    if (imgError && onError) {
++      onError(imgError);
+     }
+-  }, [data, fetchingFileInProgress, imgError]);
++  }, [imgError, onError]);
+ 
+   const handleDelete = async () => {
+     if (
+@@ -139,7 +124,8 @@ export function Image({
+         fetch,
+       });
+     } catch (e) {
+-      setError(e as Error);
++      setActionError(e as Error);
++      onError?.(e as Error);
+     }
+   };
+ 
+@@ -158,7 +144,7 @@ export function Image({
+         );
+ 
+         if (newObjectUrl) {
+-          setImgObjectUrl(newObjectUrl);
++          setUploadedObjectUrl(newObjectUrl);
+         }
+       } else if (!value && saveLocation) {
+         const savedFile = await saveFileInContainer(saveLocation, fileList[0], {
+@@ -166,7 +152,7 @@ export function Image({
+         });
+         const savedFileUrl = getSourceUrl(savedFile);
+         if (savedFileUrl && propThing && propProperty && solidDataset) {
+-          setImgObjectUrl(savedFileUrl);
++          setUploadedObjectUrl(savedFileUrl);
+           try {
+             const updatedThing = addUrl(propThing, propProperty, savedFileUrl);
+             const updatedDataset = setThing(solidDataset, updatedThing);
+@@ -176,7 +162,8 @@ export function Image({
+               fetch,
+             });
+           } catch (e) {
+-            setError(e as Error);
++            setActionError(e as Error);
++            onError?.(e as Error);
+           }
+         }
+       }

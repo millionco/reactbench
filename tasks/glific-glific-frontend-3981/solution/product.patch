@@ -1,0 +1,230 @@
+diff --git a/src/containers/AIEvals/AIEvaluationList/AIEvaluationList.module.css b/src/containers/AIEvals/AIEvaluationList/AIEvaluationList.module.css
+index d7a74fe..2aa00e7 100644
+--- a/src/containers/AIEvals/AIEvaluationList/AIEvaluationList.module.css
++++ b/src/containers/AIEvals/AIEvaluationList/AIEvaluationList.module.css
+@@ -131,7 +131,10 @@
+   font-size: 12px;
+   font-weight: 500;
+   white-space: nowrap;
+-  display: inline-block;
++  display: inline-flex;
++  align-items: center;
++  justify-content: center;
++  position: relative;
+   pointer-events: none;
+ }
+
+@@ -143,12 +146,31 @@
+   font-size: 12px;
+   font-weight: 500;
+   white-space: nowrap;
+-  display: inline-block;
++  display: inline-flex;
++  align-items: center;
++  justify-content: center;
++  position: relative;
+   pointer-events: none;
+   opacity: 0.4;
+   cursor: not-allowed;
+ }
+
++.DownloadButtonText {
++  visibility: visible;
++}
++
++.DownloadButtonTextHidden {
++  visibility: hidden;
++}
++
++.DownloadSpinnerOverlay {
++  position: absolute;
++  display: flex;
++  align-items: center;
++  justify-content: center;
++  color: #fff;
++}
++
+ .NameSubInfo {
+   display: flex;
+   align-items: center;
+diff --git a/src/containers/AIEvals/AIEvaluationList/AIEvaluationList.tsx b/src/containers/AIEvals/AIEvaluationList/AIEvaluationList.tsx
+index bb09889..a46f3d1 100644
+--- a/src/containers/AIEvals/AIEvaluationList/AIEvaluationList.tsx
++++ b/src/containers/AIEvals/AIEvaluationList/AIEvaluationList.tsx
+@@ -2,12 +2,13 @@ import { useLazyQuery } from '@apollo/client';
+ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+ import AssistantsIcon from 'assets/images/Assistants.svg?react';
+ import DocumentIcon from 'assets/images/icons/Document/Light.svg?react';
+-import { Tooltip } from '@mui/material';
++import { CircularProgress, Tooltip } from '@mui/material';
+ import { setErrorMessage, setNotification } from 'common/notification';
+ import { List } from 'containers/List/List';
+ import dayjs from 'dayjs';
+ import relativeTime from 'dayjs/plugin/relativeTime';
+ import { COUNT_AI_EVALUATIONS, GET_EVALUATION_SCORES, LIST_AI_EVALUATIONS } from 'graphql/queries/AIEvaluations';
++import { useEffect, useRef, useState } from 'react';
+ import { useNavigate } from 'react-router';
+ import styles from './AIEvaluationList.module.css';
+
+@@ -228,10 +229,49 @@ const queries = {
+ export const AIEvaluationList = ({ searchQuery }: AIEvaluationListProps) => {
+   const navigate = useNavigate();
+   const [fetchEvaluationScores] = useLazyQuery(GET_EVALUATION_SCORES);
++  const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
++  const downloadingIdsRef = useRef<Set<string> | null>(null);
++  if (downloadingIdsRef.current === null) {
++    downloadingIdsRef.current = new Set();
++  }
++  const downloadingIdsStore = downloadingIdsRef.current;
++  const downloadControllersRef = useRef(new Map<string, AbortController>());
++  useEffect(
++    () => () => {
++      for (const controller of downloadControllersRef.current.values()) {
++        controller.abort();
++      }
++      downloadControllersRef.current.clear();
++      downloadingIdsStore.clear();
++    },
++    [downloadingIdsStore],
++  );
++  const previousSearchQueryRef = useRef(searchQuery);
++  useEffect(() => {
++    if (previousSearchQueryRef.current === searchQuery) return;
++    previousSearchQueryRef.current = searchQuery;
++    for (const controller of downloadControllersRef.current.values()) {
++      controller.abort();
++    }
++    downloadControllersRef.current.clear();
++    downloadingIdsStore.clear();
++    setDownloadingIds(new Set(downloadingIdsStore));
++  }, [searchQuery, downloadingIdsStore]);
+
+   const handleDownload = async (id: string, name: string) => {
++    if (downloadingIdsStore.has(id)) return;
++    const controller = new AbortController();
++    downloadControllersRef.current.set(id, controller);
++    downloadingIdsStore.add(id);
++    setDownloadingIds(new Set(downloadingIdsStore));
+     try {
+-      const { data, error } = await fetchEvaluationScores({ variables: { id } });
++      const { data, error } = await fetchEvaluationScores({
++        variables: { id },
++        context: {
++          fetchOptions: { signal: controller.signal },
++          queryDeduplication: false,
++        },
++      });
+
+       if (error) {
+         setErrorMessage(error);
+@@ -278,22 +307,61 @@ export const AIEvaluationList = ({ searchQuery }: AIEvaluationListProps) => {
+       }
+       triggerCsvDownload(csv, `${name}_scores.csv`);
+     } catch (err) {
+-      setErrorMessage(err as Error);
++      if (!controller.signal.aborted) setErrorMessage(err as Error);
++    } finally {
++      if (downloadControllersRef.current.get(id) === controller) {
++        downloadControllersRef.current.delete(id);
++        downloadingIdsStore.delete(id);
++        setDownloadingIds(new Set(downloadingIdsStore));
++      }
+     }
+   };
+
++  const cancelDownload = (id: string) => {
++    const controller = downloadControllersRef.current.get(id);
++    if (!controller) return;
++    controller.abort();
++    if (downloadControllersRef.current.get(id) === controller) {
++      downloadControllersRef.current.delete(id);
++      downloadingIdsStore.delete(id);
++      setDownloadingIds(new Set(downloadingIdsStore));
++    }
++  };
++
+   const additionalAction = (item: any) => {
+     const isNotCompleted = item?.status?.toUpperCase() !== 'COMPLETED';
++    const isDownloading = downloadingIds.has(item?.id);
+     return [
+       {
+-        label: 'Download Results',
++        label: isDownloading ? 'Cancel download' : 'Download Results',
++        ariaLabel: isDownloading
++          ? `Cancel download ${item.name}`
++          : `Download Results ${item.name}`,
+         icon: (
+-          <span className={isNotCompleted ? styles.DownloadCsvButtonDisabled : styles.DownloadCsvButton}>
+-            Download Results
++          <span
++            className={isNotCompleted ? styles.DownloadCsvButtonDisabled : styles.DownloadCsvButton}
++          >
++            <span className={styles.DownloadButtonText}>
++              {isDownloading ? 'Cancel download' : 'Download Results'}
++            </span>
++            {isDownloading && (
++              <span className={styles.DownloadSpinnerOverlay}>
++                <CircularProgress
++                  size={14}
++                  thickness={5}
++                  color="inherit"
++                  aria-label={`Downloading results for ${item.name}`}
++                />
++              </span>
++            )}
+           </span>
+         ),
+         parameter: 'id',
+-        dialog: isNotCompleted ? () => {} : (id: string) => handleDownload(id, item.name),
++        dialog: isNotCompleted
++          ? () => {}
++          : isDownloading
++            ? (id: string) => cancelDownload(id)
++            : (id: string) => handleDownload(id, item.name),
+       },
+     ];
+   };
+diff --git a/src/containers/List/List.tsx b/src/containers/List/List.tsx
+index c73530f..a0a4cab 100644
+--- a/src/containers/List/List.tsx
++++ b/src/containers/List/List.tsx
+@@ -63,7 +63,11 @@ const actionListMap = (item: any, actionList: any, hasMoreOption: boolean) => {
+       return (
+         <Link to={`${action.link}/${additionalActionParameter}`} key={key}>
+           <Tooltip title={`${action.label}`} placement="top">
+-            <IconButton className={styles.additonalButton} data-testid="additionalButton">
++            <IconButton
++              aria-label={action.ariaLabel ?? action.label}
++              className={styles.additonalButton}
++              data-testid="additionalButton"
++            >
+               {action.icon}
+             </IconButton>
+           </Tooltip>
+@@ -74,6 +78,7 @@ const actionListMap = (item: any, actionList: any, hasMoreOption: boolean) => {
+       return (
+         <Tooltip title={`${action.label}`} placement="top" key={key}>
+           <IconButton
++            aria-label={action.ariaLabel ?? action.label}
+             data-testid="additionalButton"
+             className={styles.additonalButton}
+             id="additionalButton-icon"
+@@ -130,6 +135,7 @@ export interface ListProps {
+     link?: string;
+     dialog?: any;
+     label?: string;
++    ariaLabel?: string;
+     button?: any;
+   }>;
+   deleteModifier?: {
+diff --git a/src/i18n/hi/hi.json b/src/i18n/hi/hi.json
+index 40da3ee..056decd 100644
+--- a/src/i18n/hi/hi.json
++++ b/src/i18n/hi/hi.json
+@@ -559,4 +559,4 @@
+   "Your request has been submitted. You will be notified when it gets approved.": "आपका अनुरोध सबमिट हो गया है। अनुमोदित होने पर आपको सूचित किया जाएगा।",
+   "Something went wrong while checking your AI Evaluations access. Please refresh the page or try again.": "आपके AI मूल्यांकन एक्सेस की जांच के दौरान कुछ गलत हो गया। कृपया पृष्ठ रीफ़्रेश करें या पुनः प्रयास करें।",
+   "Refresh": "रीफ़्रेश करें"
+-}
+\ No newline at end of file
++}

@@ -1,0 +1,238 @@
+diff --git a/apps/framework-editor/app/(pages)/frameworks/[frameworkId]/FrameworkRequirementsClientPage.tsx b/apps/framework-editor/app/(pages)/frameworks/[frameworkId]/FrameworkRequirementsClientPage.tsx
+index aae08cffa..9b637c91b 100644
+--- a/apps/framework-editor/app/(pages)/frameworks/[frameworkId]/FrameworkRequirementsClientPage.tsx
++++ b/apps/framework-editor/app/(pages)/frameworks/[frameworkId]/FrameworkRequirementsClientPage.tsx
+@@ -1,6 +1,10 @@
+ 'use client';
+ 
+ import { apiClient } from '@/app/lib/api-client';
++import {
++  ColumnResizeHandle,
++  useResizableColumns,
++} from '@/app/components/table/resizable-columns';
+ import {
+   createColumnHelper,
+   flexRender,
+@@ -66,6 +70,18 @@ async function unlinkControlFromRequirement(requirementId: string, controlId: st
+ }
+ 
+ const columnHelper = createColumnHelper<RequirementGridRow>();
++const REQUIREMENT_DEFAULT_WIDTHS: Record<string, number> = {
++  sortOrder: 90,
++  requirementFamily: 200,
++  identifier: 140,
++  name: 250,
++  description: 300,
++  controlTemplates: 220,
++  createdAt: 160,
++  updatedAt: 160,
++  actions: 50,
++};
++const REQUIREMENT_WIDTHS_COOKIE = 'fwk-requirements-col-widths';
+ 
+ export function FrameworkRequirementsClientPage({
+   frameworkDetails,
+@@ -191,7 +207,7 @@ export function FrameworkRequirementsClientPage({
+       columnHelper.accessor('description', {
+         header: 'Description',
+         size: 300,
+-        maxSize: 300,
++        maxSize: 1200,
+         cell: ({ row, getValue }) => {
+           const { identifier, name } = row.original;
+           const titleSuffix = [identifier, name].filter(Boolean).join(' - ');
+@@ -251,6 +267,7 @@ export function FrameworkRequirementsClientPage({
+         id: 'actions',
+         header: '',
+         size: 50,
++        enableResizing: false,
+         cell: ({ row }) => (
+           <Button
+             variant="ghost"
+@@ -269,12 +286,18 @@ export function FrameworkRequirementsClientPage({
+   // FRAME-18: default to the framework's configured order. Numbered requirements
+   // come first; unset rows fall back to identifier order and sort last.
+   const [sorting, setSorting] = useState<SortingState>([{ id: 'sortOrder', desc: false }]);
++  const { widths, startResize } = useResizableColumns(
++    REQUIREMENT_WIDTHS_COOKIE,
++    REQUIREMENT_DEFAULT_WIDTHS,
++  );
+ 
+   const table = useReactTable({
+     data,
+     columns,
+-    state: { sorting },
++    state: { sorting, columnSizing: widths },
+     onSortingChange: setSorting,
++    columnResizeMode: 'onChange',
++    defaultColumn: { minSize: 60 },
+     getCoreRowModel: getCoreRowModel(),
+     getSortedRowModel: getSortedRowModel(),
+     getRowId: (row) => row.id,
+@@ -384,15 +407,23 @@ export function FrameworkRequirementsClientPage({
+       </div>
+ 
+       <div className="scrollbar-primary border-border min-h-0 flex-1 overflow-auto rounded-xs border">
+-        <table className="w-full border-collapse">
++        <table
++          className="border-collapse"
++          style={{ tableLayout: 'fixed', width: table.getTotalSize() }}
++        >
++          <colgroup>
++            {table.getVisibleFlatColumns().map((column) => (
++              <col key={column.id} style={{ width: column.getSize() }} />
++            ))}
++          </colgroup>
+           <thead className="bg-muted/50">
+             {table.getHeaderGroups().map((headerGroup) => (
+               <tr key={headerGroup.id}>
+                 {headerGroup.headers.map((header) => (
+                   <th
+                     key={header.id}
+-                    className="border-border text-muted-foreground border-b px-2 py-2 text-left text-xs font-medium"
+-                    style={{ width: header.getSize(), maxWidth: header.column.columnDef.maxSize }}
++                    className="border-border text-muted-foreground relative border-b px-2 py-2 text-left text-xs font-medium"
++                    style={{ width: header.getSize() }}
+                   >
+                     {header.isPlaceholder ? null : header.column.getCanSort() ? (
+                       <button
+@@ -411,6 +437,13 @@ export function FrameworkRequirementsClientPage({
+                     ) : (
+                       flexRender(header.column.columnDef.header, header.getContext())
+                     )}
++                    {header.column.getCanResize() && header.column.id !== 'actions' && (
++                      <ColumnResizeHandle
++                        columnLabel={String(header.column.columnDef.header)}
++                        width={header.getSize()}
++                        onResizeStart={(event) => startResize(header.column.id, event)}
++                      />
++                    )}
+                   </th>
+                 ))}
+               </tr>
+@@ -429,8 +462,8 @@ export function FrameworkRequirementsClientPage({
+                 {row.getVisibleCells().map((cell) => (
+                   <td
+                     key={cell.id}
+-                    className="p-0"
+-                    style={{ width: cell.column.getSize(), maxWidth: cell.column.columnDef.maxSize }}
++                    className="overflow-hidden p-0"
++                    style={{ width: cell.column.getSize() }}
+                   >
+                     {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                   </td>
+diff --git a/apps/framework-editor/app/components/table/column-widths-cookie.ts b/apps/framework-editor/app/components/table/column-widths-cookie.ts
+index 35e0f22e9..3ee66e453 100644
+--- a/apps/framework-editor/app/components/table/column-widths-cookie.ts
++++ b/apps/framework-editor/app/components/table/column-widths-cookie.ts
+@@ -1,4 +1,4 @@
+-import { useState } from 'react';
++import { useSyncExternalStore } from 'react';
+ 
+ const COOKIE_MAX_AGE_SECONDS = 31_536_000;
+ 
+@@ -44,7 +44,36 @@ export const saveColumnWidths = (
+   document.cookie = `${cookieName}=${value}; path=/; max-age=${COOKIE_MAX_AGE_SECONDS}; samesite=lax`;
+ };
+ 
++const EMPTY_COLUMN_WIDTHS: Record<string, number> = {};
++const savedWidthsCache = new Map<
++  string,
++  { rawCookieValue: string | null; widths: Record<string, number> }
++>();
++
++const readRawCookieValue = (cookieName: string): string | null => {
++  const prefix = `${cookieName}=`;
++  const cookie = document.cookie.split('; ').find((entry) => entry.startsWith(prefix));
++  return cookie?.slice(prefix.length) ?? null;
++};
++
++const getSavedColumnWidthsSnapshot = (cookieName: string): Record<string, number> => {
++  const rawCookieValue = readRawCookieValue(cookieName);
++  const cachedWidths = savedWidthsCache.get(cookieName);
++  if (cachedWidths?.rawCookieValue === rawCookieValue) {
++    return cachedWidths.widths;
++  }
++
++  const widths = rawCookieValue ? loadColumnWidths(cookieName) : EMPTY_COLUMN_WIDTHS;
++  savedWidthsCache.set(cookieName, { rawCookieValue, widths });
++  return widths;
++};
++
++const subscribeToSavedColumnWidths = () => () => {};
++
+ export const useSavedColumnWidths = (cookieName: string): Record<string, number> => {
+-  const [savedWidths] = useState(() => loadColumnWidths(cookieName));
+-  return savedWidths;
++  return useSyncExternalStore(
++    subscribeToSavedColumnWidths,
++    () => getSavedColumnWidthsSnapshot(cookieName),
++    () => EMPTY_COLUMN_WIDTHS,
++  );
+ };
+diff --git a/apps/framework-editor/app/components/table/resizable-columns.tsx b/apps/framework-editor/app/components/table/resizable-columns.tsx
+index 906ca176d..017d1e33d 100644
+--- a/apps/framework-editor/app/components/table/resizable-columns.tsx
++++ b/apps/framework-editor/app/components/table/resizable-columns.tsx
+@@ -15,33 +15,46 @@ export const useResizableColumns = (
+     () => ({ ...defaultWidths, ...savedWidths, ...resizedWidths }),
+     [defaultWidths, resizedWidths, savedWidths],
+   );
++  const currentWidths = useRef(widths);
++  currentWidths.current = widths;
+   const activeCleanup = useRef<(() => void) | null>(null);
+ 
+   const startResize = useCallback(
+     (columnKey: string, event: React.MouseEvent) => {
+       event.preventDefault();
+       event.stopPropagation();
++      activeCleanup.current?.();
++
+       const initialPointerX = event.clientX;
+-      const initialWidth = widths[columnKey] ?? MINIMUM_COLUMN_WIDTH_PX;
++      const initialWidth = currentWidths.current[columnKey] ?? MINIMUM_COLUMN_WIDTH_PX;
++      const previousUserSelect = document.body.style.userSelect;
++      let finalWidth = initialWidth;
+ 
+       const handleMouseMove = (moveEvent: MouseEvent) => {
+-        const width = Math.max(
++        finalWidth = Math.max(
+           MINIMUM_COLUMN_WIDTH_PX,
+           Math.round(initialWidth + moveEvent.clientX - initialPointerX),
+         );
+-        setResizedWidths((currentWidths) => ({ ...currentWidths, [columnKey]: width }));
++        currentWidths.current = { ...currentWidths.current, [columnKey]: finalWidth };
++        setResizedWidths((currentResizedWidths) => ({
++          ...currentResizedWidths,
++          [columnKey]: finalWidth,
++        }));
+       };
+ 
+       const cleanup = () => {
+         document.removeEventListener('mousemove', handleMouseMove);
+         document.removeEventListener('mouseup', handleMouseUp);
+-        document.body.style.userSelect = '';
+-        activeCleanup.current = null;
++        document.body.style.userSelect = previousUserSelect;
++        if (activeCleanup.current === cleanup) {
++          activeCleanup.current = null;
++        }
+       };
+ 
+       const handleMouseUp = () => {
++        currentWidths.current = { ...currentWidths.current, [columnKey]: finalWidth };
+         cleanup();
+-        saveColumnWidths(cookieName, widths);
++        saveColumnWidths(cookieName, currentWidths.current);
+       };
+ 
+       document.body.style.userSelect = 'none';
+@@ -49,7 +62,7 @@ export const useResizableColumns = (
+       document.addEventListener('mouseup', handleMouseUp);
+       activeCleanup.current = cleanup;
+     },
+-    [cookieName, widths],
++    [cookieName],
+   );
+ 
+   useEffect(() => () => activeCleanup.current?.(), []);

@@ -1,0 +1,9 @@
+{
+  "rd": {
+    "scan_root": "/app"
+  },
+  "verifier_timeout_sec": 300,
+  "test": {
+    "cmd": "pnpm exec vitest run src/__verifier__/hello-react.spec.tsx"
+  }
+}

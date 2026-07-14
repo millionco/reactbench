@@ -1,0 +1,642 @@
+diff --git a/src/system/NewForm/FormAutocompleteMultiselect.jsx b/src/system/NewForm/FormAutocompleteMultiselect.jsx
+index cc2d7a0c..087cf16b 100644
+--- a/src/system/NewForm/FormAutocompleteMultiselect.jsx
++++ b/src/system/NewForm/FormAutocompleteMultiselect.jsx
+@@ -7,12 +7,14 @@ import Autocomplete from 'accessible-autocomplete/react';
+ import classNames from 'classnames';
+ import PropTypes from 'prop-types';
+ import React, { useCallback, useEffect, useMemo, useState } from 'react';
++import { Box } from 'theme-ui';
+ 
+ /**
+  * Internal dependencies
+  */
+ import { FormAutocompleteMultiselectBadge } from './FormAutocompleteMultiselectBadge';
+ import { FormAutocompleteMultiselectButton } from './FormAutocompleteMultiselectButton';
++import { FormAutocompleteMultiselectInlineChip } from './FormAutocompleteMultiselectInlineChip';
+ import { FormSelectArrow } from './FormSelectArrow';
+ import { FormSelectContent } from './FormSelectContent';
+ import { FormSelectLoading } from './FormSelectLoading';
+@@ -22,6 +24,20 @@ import { Validation } from '../Form';
+ import { baseControlBorderStyle, inputBaseText } from '../Form/Input.styles';
+ import { Label } from '../Form/Label';
+ 
++const escapeHtml = str =>
++	String( str )
++		.replace( /&/g, '&amp;' )
++		.replace( /</g, '&lt;' )
++		.replace( />/g, '&gt;' )
++		.replace( /"/g, '&quot;' )
++		.replace( /'/g, '&#039;' );
++
++const OPTION_ACTION = {
++	ADD: 'add',
++	REMOVE: 'remove',
++	NONE: 'none',
++};
++
+ const baseBorderTextColors = {
+ 	...baseControlBorderStyle,
+ 	backgroundColor: 'layer.2',
+@@ -96,7 +112,33 @@ const searchIconStyles = {
+ 	},
+ };
+ 
+-const DefaultArrow = config => <FormSelectArrow classNames={ config.className } />;
++const inlineChipsContainerStyles = {
++	...defaultStyles,
++	display: 'flex',
++	flexWrap: 'wrap',
++	alignItems: 'center',
++	p: 1,
++	pr: 0,
++	position: 'relative',
++	'& .autocomplete__input': {
++		...defaultStyles[ '& .autocomplete__input' ],
++		lineHeight: '24px',
++		minHeight: '24px',
++	},
++	'&:focus-within': theme => theme.outline,
++	'& .autocomplete__wrapper': {
++		position: 'static',
++		width: '100%',
++		lineHeight: '24px',
++		minHeight: '24px',
++		'& .autocomplete__dropdown-arrow-down': {
++			top: 'unset',
++			bottom: '6px',
++		},
++	},
++};
++
++const DefaultArrow = config => <FormSelectArrow className={ config.className } />;
+ 
+ const AddSelectionStatus = ( { status } ) => {
+ 	return (
+@@ -127,6 +169,213 @@ AddSelectionStatus.propTypes = {
+ 	status: PropTypes.string.isRequired,
+ };
+ 
++const useAutocompleteAccessibility = ( { forLabel, label, required, setIsDirty } ) => {
++	useEffect( () => {
++		global.document
++			.querySelector( '.autocomplete__input' )
++			.removeAttribute( 'aria-activedescendant' );
++	}, [] );
++
++	useEffect( () => {
++		global.document
++			.querySelector( '.autocomplete__menu' )
++			.setAttribute( 'aria-label', `${ label } list` );
++	}, [ label ] );
++
++	useEffect( () => {
++		const input = global.document.querySelector( `#${ forLabel }` );
++		if ( ! input || required === undefined ) {
++			return;
++		}
++		input.setAttribute( 'aria-required', required );
++	}, [ required ] );
++
++	useEffect( () => {
++		global.document.querySelector( `#${ forLabel }` ).addEventListener( 'keydown', () => {
++			setIsDirty( true );
++		} );
++	}, [ setIsDirty ] );
++
++	// For accessibility, we need to add the error message to the aria-describedby attribute
++	useEffect( () => {
++		const input = global.document.querySelector( `#${ forLabel }` );
++		input?.setAttribute(
++			'aria-describedby',
++			`describe-${ forLabel }-validation ${ input.getAttribute( 'aria-describedby' ) }`
++		);
++	}, [] );
++};
++
++const FormAutocompleteMultiselectInlineChips = ( {
++	addStatus,
++	className,
++	displayMenu,
++	dropdownArrow,
++	errorMessage,
++	forLabel,
++	forwardRef,
++	hasError,
++	inputProps,
++	label,
++	loading,
++	noOptionsMessage,
++	onConfirm,
++	required,
++	selectedOptions,
++	source,
++	unselectValue,
++	value,
++} ) => {
++	const templates = useMemo(
++		() => ( {
++			suggestion: suggestion => {
++				const isSelected = selectedOptions.includes( suggestion );
++				const check = isSelected ? '&#10003;' : '';
++				return `<span style="display:flex;align-items:center;gap:8px"><span style="width:16px;flex-shrink:0">${ check }</span>${ escapeHtml(
++					suggestion
++				) }</span>`;
++			},
++		} ),
++		[ selectedOptions ]
++	);
++
++	return (
++		<div className={ classNames( 'vip-form-autocomplete-component', className ) }>
++			{ label && (
++				<Label required={ required } htmlFor={ forLabel }>
++					{ label }
++				</Label>
++			) }
++			<Box sx={ inlineChipsContainerStyles }>
++				{ selectedOptions.map( ( option, idx ) => (
++					<FormAutocompleteMultiselectInlineChip
++						key={ option }
++						index={ idx }
++						option={ option }
++						unselectValue={ unselectValue }
++					/>
++				) ) }
++				<Box sx={ { flex: '1 1 120px', minWidth: '120px' } }>
++					<Autocomplete
++						id={ forLabel }
++						aria-busy={ loading }
++						showAllValues={ true }
++						ref={ forwardRef }
++						source={ source }
++						defaultValue={ value }
++						displayMenu={ displayMenu }
++						onConfirm={ onConfirm }
++						tNoResults={ noOptionsMessage }
++						required={ required }
++						dropdownArrow={ dropdownArrow }
++						confirmOnBlur={ false }
++						templates={ templates }
++						{ ...inputProps }
++						placeholder={ selectedOptions.length > 0 ? '' : inputProps.placeholder || '' }
++					/>
++				</Box>
++				{ addStatus && <AddSelectionStatus status={ addStatus } /> }
++				{ loading && <FormSelectLoading sx={ { right: 7 } } /> }
++			</Box>
++			{ hasError && errorMessage && (
++				<Flex sx={ { mt: 2 } }>
++					<Validation isValid={ false } describedId={ forLabel }>
++						{ errorMessage }
++					</Validation>
++				</Flex>
++			) }
++		</div>
++	);
++};
++
++const FormAutocompleteMultiselectDefault = ( {
++	addStatus,
++	className,
++	displayMenu,
++	dropdownArrow,
++	errorMessage,
++	forLabel,
++	forwardRef,
++	hasError,
++	inputProps,
++	isInline,
++	label,
++	ListComponent,
++	loading,
++	noOptionsMessage,
++	onConfirm,
++	required,
++	searchIcon,
++	selectedOptions,
++	showAllValues,
++	source,
++	unselectValue,
++	value,
++} ) => {
++	const selectLabel = (
++		<Label required={ required } htmlFor={ forLabel }>
++			{ label }
++		</Label>
++	);
++
++	const inlineLabel = Boolean( isInline && label );
++
++	return (
++		<div className={ classNames( 'vip-form-autocomplete-component', className ) }>
++			{ label && ! isInline && selectLabel }
++			<div
++				sx={ {
++					...defaultStyles,
++					...( isInline && inlineStyles ),
++					...( searchIcon && searchIconStyles ),
++				} }
++			>
++				<FormSelectContent isInline={ inlineLabel } label={ inlineLabel ? selectLabel : null }>
++					{ searchIcon && <FormSelectSearch /> }
++					<Autocomplete
++						id={ forLabel }
++						aria-busy={ loading }
++						showAllValues={ showAllValues }
++						ref={ forwardRef }
++						source={ source }
++						defaultValue={ value }
++						displayMenu={ displayMenu }
++						onConfirm={ onConfirm }
++						tNoResults={ noOptionsMessage }
++						required={ required }
++						dropdownArrow={ showAllValues ? dropdownArrow : () => '' }
++						confirmOnBlur={ false }
++						{ ...inputProps }
++					/>
++					{ addStatus && <AddSelectionStatus status={ addStatus } /> }
++					{ loading && <FormSelectLoading sx={ { right: showAllValues ? 7 : 3 } } /> }
++				</FormSelectContent>
++			</div>
++			<Flex sx={ { mt: 2, justifyContent: 'space-between' } }>
++				{ hasError && errorMessage && (
++					<Validation isValid={ false } describedId={ forLabel }>
++						{ errorMessage }
++					</Validation>
++				) }
++				<div sx={ { fontSize: 1 } }>
++					{ selectedOptions.length } item{ selectedOptions.length === 1 ? '' : 's' } selected
++				</div>
++			</Flex>
++			<div sx={ { display: 'inline-flex', flexWrap: 'wrap', maxWidth: '100%' } }>
++				{ selectedOptions &&
++					selectedOptions.map( ( option, idx ) => (
++						<ListComponent
++							key={ idx }
++							index={ idx }
++							option={ option }
++							unselectValue={ unselectValue }
++						/>
++					) ) }
++			</div>
++		</div>
++	);
++};
++
+ const FormAutocompleteMultiselect = React.forwardRef(
+ 	(
+ 		{
+@@ -156,15 +405,12 @@ const FormAutocompleteMultiselect = React.forwardRef(
+ 			listType = 'button',
+ 			initialValue = [],
+ 			allowCustom = false,
++			variant,
+ 			...props
+ 		},
+ 		forwardRef
+ 	) => {
+-		const OPTION_ACTION = {
+-			ADD: 'add',
+-			REMOVE: 'remove',
+-			NONE: 'none',
+-		};
++		const isInlineChips = variant === 'inline-chips';
+ 		const ListComponent =
+ 			listType === 'button' ? FormAutocompleteMultiselectButton : FormAutocompleteMultiselectBadge;
+ 		const [ isDirty, setIsDirty ] = useState( false );
+@@ -175,6 +421,7 @@ const FormAutocompleteMultiselect = React.forwardRef(
+ 			option: null,
+ 			index: -1,
+ 		} );
++		const justSelectedRef = React.useRef( false );
+ 		let debounceTimeout;
+ 		forwardRef = forwardRef || React.createRef();
+ 
+@@ -191,14 +438,6 @@ const FormAutocompleteMultiselect = React.forwardRef(
+ 			}
+ 		}, [ forwardRef ] );
+ 
+-		const SelectLabel = () => (
+-			<Label required={ required } htmlFor={ forLabel }>
+-				{ label }
+-			</Label>
+-		);
+-
+-		const inlineLabel = Boolean( isInline && label );
+-
+ 		const optionLabel = useCallback(
+ 			option => ( getOptionLabel ? getOptionLabel( option ) : option.label ),
+ 			[ getOptionLabel ]
+@@ -240,9 +479,20 @@ const FormAutocompleteMultiselect = React.forwardRef(
+ 						option: inputValue,
+ 						index,
+ 					} );
++					setAddStatus( `${ inputValue } removed from the list.` );
++					if ( isInlineChips ) {
++						global.document.querySelector( `#${ forLabel }` )?.focus();
++					}
+ 				}
+ 			},
+-			[ getOptionByLabel, setSelectedOptions, selectedOptions, setCurrentOption ]
++			[
++				forLabel,
++				getOptionByLabel,
++				isInlineChips,
++				setSelectedOptions,
++				selectedOptions,
++				setCurrentOption,
++			]
+ 		);
+ 
+ 		const handleTypeChange = useCallback(
+@@ -283,47 +533,34 @@ const FormAutocompleteMultiselect = React.forwardRef(
+ 					data = handleTypeChange( query );
+ 				}
+ 				const optionForDisplay = data?.map( option => optionLabel( option ) );
+-				populateResults(
+-					optionForDisplay.filter( option => ! selectedOptions.includes( option ) )
+-				);
++				if ( isInlineChips ) {
++					populateResults( optionForDisplay );
++				} else {
++					populateResults(
++						optionForDisplay.filter( option => ! selectedOptions.includes( option ) )
++					);
++				}
+ 			},
+-			[ autoFilter, isDirty, onInputChange, options, selectedOptions ]
++			[ autoFilter, isDirty, isInlineChips, onInputChange, options, selectedOptions ]
+ 		);
+ 
+-		useEffect( () => {
+-			global.document
+-				.querySelector( '.autocomplete__input' )
+-				.removeAttribute( 'aria-activedescendant' );
+-		}, [] );
++		const onValueChangeInlineChips = useCallback(
++			inputValue => {
++				if ( ! inputValue ) {
++					return;
++				}
++				justSelectedRef.current = true;
++				if ( selectedOptions.includes( inputValue ) ) {
++					unselectValue( inputValue, selectedOptions.indexOf( inputValue ) );
++				} else {
++					setCurrentOption( { action: OPTION_ACTION.ADD, option: inputValue } );
++					setSelectedOptions( [ ...selectedOptions, inputValue ] );
++				}
++			},
++			[ selectedOptions, unselectValue ]
++		);
+ 
+-		useEffect( () => {
+-			global.document
+-				.querySelector( '.autocomplete__menu' )
+-				.setAttribute( 'aria-label', `${ label } list` );
+-		}, [ label ] );
+-
+-		useEffect( () => {
+-			const input = global.document.querySelector( `#${ forLabel }` );
+-			if ( ! input || required === undefined ) {
+-				return;
+-			}
+-			input.setAttribute( 'aria-required', required );
+-		}, [ required ] );
+-
+-		useEffect( () => {
+-			global.document.querySelector( `#${ forLabel }` ).addEventListener( 'keydown', () => {
+-				setIsDirty( true );
+-			} );
+-		}, [ setIsDirty ] );
+-
+-		// For accessibility, we need to add the error message to the aria-describedby attribute
+-		useEffect( () => {
+-			const input = global.document.querySelector( `#${ forLabel }` );
+-			input?.setAttribute(
+-				'aria-describedby',
+-				`describe-${ forLabel }-validation ${ input.getAttribute( 'aria-describedby' ) }`
+-			);
+-		}, [] );
++		useAutocompleteAccessibility( { forLabel, label, required, setIsDirty } );
+ 
+ 		// Update selectedOption and reset the input state on select input change
+ 
+@@ -332,7 +569,16 @@ const FormAutocompleteMultiselect = React.forwardRef(
+ 				selectedOptions,
+ 				selectedOptions.map( option => option?.label || option )
+ 			);
+-			resetInputState();
++			if ( isInlineChips && justSelectedRef.current && forwardRef?.current ) {
++				justSelectedRef.current = false;
++				forwardRef.current.setState( {
++					...forwardRef.current.state,
++					query: '',
++					menuOpen: true,
++				} );
++			} else {
++				resetInputState();
++			}
+ 		}, [ selectedOptions ] );
+ 
+ 		// Update the select status for screen readers
+@@ -349,62 +595,56 @@ const FormAutocompleteMultiselect = React.forwardRef(
+ 			}
+ 		}, [ currentOption ] );
+ 
++		if ( isInlineChips ) {
++			return (
++				<FormAutocompleteMultiselectInlineChips
++					addStatus={ addStatus }
++					className={ className }
++					displayMenu={ displayMenu }
++					dropdownArrow={ dropdownArrow }
++					errorMessage={ errorMessage }
++					forLabel={ forLabel }
++					forwardRef={ forwardRef }
++					hasError={ hasError }
++					inputProps={ props }
++					label={ label }
++					loading={ loading }
++					noOptionsMessage={ noOptionsMessage }
++					onConfirm={ onValueChangeInlineChips }
++					required={ required }
++					selectedOptions={ selectedOptions }
++					source={ source || suggest }
++					unselectValue={ unselectValue }
++					value={ value }
++				/>
++			);
++		}
++
+ 		return (
+-			<div className={ classNames( 'vip-form-autocomplete-component', className ) }>
+-				{ label && ! isInline && <SelectLabel /> }
+-				<div
+-					sx={ {
+-						...defaultStyles,
+-						...( isInline && inlineStyles ),
+-						...( searchIcon && searchIconStyles ),
+-					} }
+-				>
+-					<FormSelectContent
+-						isInline={ inlineLabel }
+-						label={ inlineLabel ? <SelectLabel /> : null }
+-					>
+-						{ searchIcon && <FormSelectSearch /> }
+-						<Autocomplete
+-							id={ forLabel }
+-							aria-busy={ loading }
+-							showAllValues={ showAllValues }
+-							ref={ forwardRef }
+-							source={ source || suggest }
+-							defaultValue={ value }
+-							displayMenu={ displayMenu }
+-							onConfirm={ onValueChange }
+-							tNoResults={ noOptionsMessage }
+-							required={ required }
+-							dropdownArrow={ showAllValues ? dropdownArrow : () => '' }
+-							confirmOnBlur={ false }
+-							{ ...props }
+-						/>
+-						{ addStatus && <AddSelectionStatus status={ addStatus } /> }
+-						{ loading && <FormSelectLoading sx={ { right: showAllValues ? 7 : 3 } } /> }
+-					</FormSelectContent>
+-				</div>
+-				<Flex sx={ { mt: 2, justifyContent: 'space-between' } }>
+-					{ hasError && errorMessage && (
+-						<Validation isValid={ false } describedId={ forLabel }>
+-							{ errorMessage }
+-						</Validation>
+-					) }
+-					<div sx={ { fontSize: 1 } }>
+-						{ selectedOptions.length } item{ selectedOptions.length === 1 ? '' : 's' } selected
+-					</div>
+-				</Flex>
+-				<div sx={ { display: 'inline-flex', flexWrap: 'wrap', maxWidth: '100%' } }>
+-					{ selectedOptions &&
+-						selectedOptions.map( ( option, idx ) => (
+-							<ListComponent
+-								key={ idx }
+-								index={ idx }
+-								option={ option }
+-								unselectValue={ unselectValue }
+-							/>
+-						) ) }
+-				</div>
+-			</div>
++			<FormAutocompleteMultiselectDefault
++				addStatus={ addStatus }
++				className={ className }
++				displayMenu={ displayMenu }
++				dropdownArrow={ dropdownArrow }
++				errorMessage={ errorMessage }
++				forLabel={ forLabel }
++				forwardRef={ forwardRef }
++				hasError={ hasError }
++				inputProps={ props }
++				isInline={ isInline }
++				label={ label }
++				ListComponent={ ListComponent }
++				loading={ loading }
++				noOptionsMessage={ noOptionsMessage }
++				onConfirm={ onValueChange }
++				required={ required }
++				searchIcon={ searchIcon }
++				selectedOptions={ selectedOptions }
++				showAllValues={ showAllValues }
++				source={ source || suggest }
++				unselectValue={ unselectValue }
++				value={ value }
++			/>
+ 		);
+ 	}
+ );
+@@ -435,6 +675,7 @@ FormAutocompleteMultiselect.propTypes = {
+ 	dropdownArrow: PropTypes.node,
+ 	initialValue: PropTypes.array,
+ 	allowCustom: PropTypes.bool,
++	variant: PropTypes.string,
+ };
+ 
+ FormAutocompleteMultiselect.displayName = 'FormAutocompleteMultiselect';
+diff --git a/src/system/NewForm/FormAutocompleteMultiselectInlineChip.tsx b/src/system/NewForm/FormAutocompleteMultiselectInlineChip.tsx
+new file mode 100644
+index 00000000..0924391d
+--- /dev/null
++++ b/src/system/NewForm/FormAutocompleteMultiselectInlineChip.tsx
+@@ -0,0 +1,74 @@
++/**
++ * External dependencies
++ */
++import { MdClose } from 'react-icons/md';
++import { Box } from 'theme-ui';
++
++const FormAutocompleteMultiselectInlineChip = ( {
++	index,
++	option,
++	unselectValue,
++}: {
++	index: number;
++	option: string;
++	unselectValue: ( option: string, index: number ) => void;
++} ) => {
++	return (
++		<Box
++			as="span"
++			sx={ {
++				display: 'inline-flex',
++				alignItems: 'center',
++				gap: 1,
++				px: 2,
++				py: '2px',
++				m: 1,
++				bg: 'layer.1',
++				borderRadius: 1,
++				fontSize: 1,
++				lineHeight: '16px',
++				whiteSpace: 'nowrap',
++				maxWidth: '100%',
++			} }
++		>
++			<Box
++				as="span"
++				sx={ {
++					overflow: 'hidden',
++					textOverflow: 'ellipsis',
++					whiteSpace: 'nowrap',
++				} }
++			>
++				{ option }
++			</Box>
++			<Box
++				as="button"
++				type="button"
++				aria-label={ `Remove ${ option }` }
++				onClick={ e => {
++					e.preventDefault();
++					e.stopPropagation();
++					unselectValue( option, index );
++				} }
++				sx={ {
++					display: 'inline-flex',
++					alignItems: 'center',
++					justifyContent: 'center',
++					p: 0,
++					border: 'none',
++					bg: 'transparent',
++					cursor: 'pointer',
++					color: 'text',
++					lineHeight: 0,
++					'&:hover': {
++						opacity: 0.7,
++					},
++				} }
++			>
++				<MdClose size={ 14 } />
++			</Box>
++		</Box>
++	);
++};
++
++export { FormAutocompleteMultiselectInlineChip };

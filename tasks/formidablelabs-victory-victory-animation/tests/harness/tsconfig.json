@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "allowSyntheticDefaultImports": true,
+    "baseUrl": ".",
+    "esModuleInterop": true,
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "paths": {
+      "@victory-animation": ["app/packages/victory-core/src/victory-animation/victory-animation.tsx"],
+      "@victory-timer": ["app/packages/victory-core/src/victory-util/timer.ts"],
+      "@victory-timer-context": ["app/packages/victory-core/src/victory-util/timer-context.ts"]
+    },
+    "skipLibCheck": true,
+    "strict": false,
+    "target": "ES2022",
+    "types": ["node", "vitest/globals"]
+  },
+  "include": ["**/*.ts", "**/*.tsx"],
+  "exclude": ["app"]
+}

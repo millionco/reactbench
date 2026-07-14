@@ -1,0 +1,33 @@
+diff --git a/packages/react/src/hooks/useListNavigation.ts b/packages/react/src/hooks/useListNavigation.ts
+index 3e4e5dc9..0a86ed09 100644
+--- a/packages/react/src/hooks/useListNavigation.ts
++++ b/packages/react/src/hooks/useListNavigation.ts
+@@ -388,6 +388,18 @@ export function useListNavigation(
+     });
+   }, []);
+
++  // Keep the roving-tabindex ref in sync with the controlled selection so
++  // keyboard navigation resumes from the right item after an external
++  // selection update (e.g. a parent form re-selecting a value).
++  useModernLayoutEffect(() => {
++    if (!enabled || !open || !floating || selectedIndex == null) {
++      return;
++    }
++
++    indexRef.current = selectedIndex;
++    focusItem(listRef, indexRef);
++  }, [enabled, open, floating, selectedIndex, listRef, focusItem]);
++
+   // Sync `selectedIndex` to be the `activeIndex` upon opening the floating
+   // element. Also, reset `activeIndex` upon closing the floating element.
+   useModernLayoutEffect(() => {
+
+diff --git a/packages/react/src/hooks/package.json b/packages/react/src/hooks/package.json
+new file mode 100644
+--- /dev/null
++++ b/packages/react/src/hooks/package.json
+@@ -0,0 +1,3 @@
++{
++  "name": "floating-ui-react-hooks",
++  "private": true
++}

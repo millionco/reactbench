@@ -1,0 +1,758 @@
+diff --git a/client/src/components/pipeline/editorial/EditorialFindingsTriage.jsx b/client/src/components/pipeline/editorial/EditorialFindingsTriage.jsx
+index b5ed1a15..02e44f7e 100644
+--- a/client/src/components/pipeline/editorial/EditorialFindingsTriage.jsx
++++ b/client/src/components/pipeline/editorial/EditorialFindingsTriage.jsx
+@@ -27,6 +27,9 @@ import {
+   applyFindingsView,
+   normalizeFindingSort,
+   FINDING_SORT_OPTIONS,
++  FINDING_FILTER_PARAMS as FILTER_PARAMS,
++  ALL_FINDING_FILTER_PARAMS as ALL_FILTER_PARAMS,
++  FINDINGS_TRIAGE_ANCHOR_ID,
+ } from '../../../lib/editorialChecks';
+ import { fixEditsOf, selectedEditsFor } from '../manuscript/ManuscriptCommentCard';
+ import InlineDiff from '../../ui/InlineDiff';
+@@ -49,10 +52,8 @@ const STATUS_LABELS = { open: 'Open', accepted: 'Accepted', dismissed: 'Dismisse
+ const SEVERITY_FILTER_ORDER = ['high', 'medium', 'low'];
+ const STATUS_FILTER_ORDER = ['open', 'accepted', 'dismissed'];
+
+-// URL params that persist the triage filters/sort (#1600). `f`-prefixed so they
+-// never collide with the page's own `series` / `custom` params.
+-const FILTER_PARAMS = { severity: 'fsev', status: 'fstatus', scope: 'fscope', check: 'fcheck', issue: 'fissue', query: 'fq', sort: 'fsort' };
+-const ALL_FILTER_PARAMS = Object.values(FILTER_PARAMS);
++// FILTER_PARAMS / ALL_FILTER_PARAMS are imported from the lib so the health
++// panel can deep-link the triage to a category/check using the same keys (#1606).
+ const parseSet = (raw) => new Set((raw || '').split(',').map((s) => s.trim()).filter(Boolean));
+ const serializeSet = (set) => [...set].join(',');
+
+@@ -534,7 +535,7 @@ function FindingsToolbar({ facets, filters, sort, setParam, toggleInParam, onCle
+         ) : null}
+         {facets.scopes.length > 1 ? (
+           <span className="flex items-center gap-1">
+-            <label htmlFor="ec-find-scope" className="text-[10px] uppercase tracking-wide text-gray-600">Category</label>
++            <label htmlFor="ec-find-scope" className="text-[10px] uppercase tracking-wide text-gray-600">Scope</label>
+             <select
+               id="ec-find-scope"
+               value={[...filters.scopes][0] || ''}
+@@ -546,6 +547,20 @@ function FindingsToolbar({ facets, filters, sort, setParam, toggleInParam, onCle
+             </select>
+           </span>
+         ) : null}
++        {facets.categories.length > 1 ? (
++          <span className="flex items-center gap-1">
++            <label htmlFor="ec-find-category" className="text-[10px] uppercase tracking-wide text-gray-600">Category</label>
++            <select
++              id="ec-find-category"
++              value={[...filters.categories][0] || ''}
++              onChange={(e) => setParam('category', e.target.value)}
++              className="max-w-[9rem] rounded border border-port-border bg-port-bg px-1.5 py-1 text-xs text-gray-200 focus:border-port-accent focus:outline-none"
++            >
++              <option value="">All</option>
++              {facets.categories.map((c) => <option key={c.category} value={c.category}>{c.label}</option>)}
++            </select>
++          </span>
++        ) : null}
+         {facets.checks.length > 1 ? (
+           <span className="flex items-center gap-1">
+             <label htmlFor="ec-find-check" className="text-[10px] uppercase tracking-wide text-gray-600">Check</label>
+@@ -642,11 +657,12 @@ export default function EditorialFindingsTriage({ seriesId, comments = [], check
+     scopes: parseSet(searchParams.get(FILTER_PARAMS.scope)),
+     checkIds: parseSet(searchParams.get(FILTER_PARAMS.check)),
+     issues: parseSet(searchParams.get(FILTER_PARAMS.issue)),
++    categories: parseSet(searchParams.get(FILTER_PARAMS.category)),
+     query: searchParams.get(FILTER_PARAMS.query) || '',
+   }), [searchParams]);
+   const activeFilterCount = filters.severities.size + filters.statuses.size
+     + filters.scopes.size + filters.checkIds.size + filters.issues.size
+-    + (filters.query ? 1 : 0);
++    + filters.categories.size + (filters.query ? 1 : 0);
+
+   // Write a single facet param (empty value clears it), preserving every other
+   // param the page owns. `replace` so filtering doesn't pile up history entries.
+@@ -724,7 +740,7 @@ export default function EditorialFindingsTriage({ seriesId, comments = [], check
+   const totalOpen = openFindingsTotal(groups);
+   const shownOpen = openFindingsTotal(visibleView);
+   return (
+-    <div className="space-y-2">
++    <div id={FINDINGS_TRIAGE_ANCHOR_ID} tabIndex={-1} className="scroll-mt-4 space-y-2">
+       <FindingsToolbar
+         facets={facets}
+         filters={filters}
+diff --git a/client/src/components/pipeline/editorial/EditorialFindingsTriage.test.jsx b/client/src/components/pipeline/editorial/EditorialFindingsTriage.test.jsx
+index 42476f96..83c3e258 100644
+--- a/client/src/components/pipeline/editorial/EditorialFindingsTriage.test.jsx
++++ b/client/src/components/pipeline/editorial/EditorialFindingsTriage.test.jsx
+@@ -273,6 +273,30 @@ describe('EditorialFindingsTriage', () => {
+     expect(screen.queryByText('Sagging middle')).toBeNull();
+   });
+
++  // ---- Category filter (#1606) — a comment-level facet distinct from scope. ----
++  const categoryComments = () => [
++    { id: 'n1', checkId: 'naming.dissimilar-names', category: 'naming', status: 'open', severity: 'high', issueNumber: 1, problem: 'Confusable names' },
++    { id: 'p1', checkId: 'pacing.scene-drag', category: 'pacing', status: 'open', severity: 'low', issueNumber: 2, problem: 'Sagging middle' },
++  ];
++  const renderCategory = (initialEntries = ['/']) => render(
++    <MemoryRouter initialEntries={initialEntries}>
++      <EditorialFindingsTriage seriesId="ser-1" checksById={twoCheckChecks} comments={categoryComments()} />
++    </MemoryRouter>,
++  );
++
++  it('filters by finding category via the Category select (#1606)', () => {
++    renderCategory();
++    fireEvent.change(screen.getByLabelText('Category'), { target: { value: 'pacing' } });
++    expect(screen.getByText('Sagging middle')).toBeTruthy();
++    expect(screen.queryByText('Confusable names')).toBeNull();
++  });
++
++  it('honors a category filter supplied via the URL query (#1606)', () => {
++    renderCategory(['/?fcat=naming']);
++    expect(screen.getByText('Confusable names')).toBeTruthy();
++    expect(screen.queryByText('Sagging middle')).toBeNull();
++  });
++
+   it('honors filters supplied via the URL query so a view is deep-linkable (#1600)', () => {
+     renderTwoCheck(['/?fsev=low']);
+     expect(screen.getByText('Sagging middle')).toBeTruthy();
+diff --git a/client/src/components/pipeline/editorial/EditorialHealthPanel.jsx b/client/src/components/pipeline/editorial/EditorialHealthPanel.jsx
+index 49cf0a27..add01944 100644
+--- a/client/src/components/pipeline/editorial/EditorialHealthPanel.jsx
++++ b/client/src/components/pipeline/editorial/EditorialHealthPanel.jsx
+@@ -15,9 +15,11 @@
+  * completes), so the score reflects the freshest review.
+  */
+ import { useCallback, useEffect, useRef, useState } from 'react';
++import { useSearchParams } from 'react-router-dom';
+ import { Activity, Loader2, TrendingUp, TrendingDown } from 'lucide-react';
+ import toast from '../../ui/Toast';
+ import { getEditorialHealth, setEditorialReadinessGate } from '../../../services/api';
++import { FINDING_FILTER_PARAMS, FINDINGS_TRIAGE_ANCHOR_ID } from '../../../lib/editorialChecks';
+ import {
+   scoreBand,
+   deltaDisplay,
+@@ -80,13 +82,87 @@ function CheckSparkline({ counts }) {
+ // Cap the rendered per-check rows so a noisy run can't blow out the panel; the
+ // remainder is surfaced as a "+N more" note rather than silently dropped.
+ const MAX_CHECK_ROWS = 8;
++const parseFilterValues = (value) => new Set(
++  (value || '').split(',').reduce((tokens, token) => {
++    const trimmedToken = token.trim();
++    if (trimmedToken) tokens.push(trimmedToken);
++    return tokens;
++  }, []),
++);
++const serializeFilterValues = (values) => [...values].join(',');
+
+-export default function EditorialHealthPanel({ seriesId, refreshKey = 0, checksById = {} }) {
++// A breakdown row (#1606) — when `interactive`, a button that toggles a triage
++// filter, with the active highlight kept in one place so the category and check
++// lists can't drift. When NOT interactive (the triage can't filter to this row's
++// key — e.g. the synthetic `completeness` bucket of null-checkId findings, which
++// the triage drops), it renders as static text so the deep-link can't strand the
++// user on an empty list. Inner content differs per breakdown, so it's passed as
++// children; layout tweaks (width/gap) come through `className`.
++function FilterRowButton({ active, title, onClick, interactive = true, className = '', children }) {
++  const base = `flex items-center rounded px-1 py-0.5 text-[11px] ${className}`;
++  if (!interactive) {
++    return <span className={base} title={title}>{children}</span>;
++  }
++  return (
++    <button
++      type="button"
++      onClick={onClick}
++      aria-pressed={active}
++      title={title}
++      className={`${base} transition-colors hover:bg-port-border/50 ${active ? 'bg-port-accent/15 ring-1 ring-port-accent/40' : ''}`}
++    >
++      {children}
++    </button>
++  );
++}
++
++export default function EditorialHealthPanel({
++  seriesId,
++  refreshKey = 0,
++  checksById = {},
++  filterableCheckIds = null,
++  filterableCategories = null,
++}) {
+   const [health, setHealth] = useState(null);
+   const [loading, setLoading] = useState(false);
+   const [savingGate, setSavingGate] = useState(false);
+   const [showIssues, setShowIssues] = useState(false);
+
++  // Make the breakdown rows navigable (#1606): clicking a category/check deep-links
++  // the triage filter (shared `f`-prefixed URL params) and scrolls the findings
++  // list into view. Reading the active filter lets a row toggle itself off and show
++  // an active state. Other filters the user set in the toolbar are preserved.
++  const [searchParams, setSearchParams] = useSearchParams();
++  const activeCategories = parseFilterValues(searchParams.get(FINDING_FILTER_PARAMS.category));
++  const activeChecks = parseFilterValues(searchParams.get(FINDING_FILTER_PARAMS.check));
++  const toggleFilter = (paramKey, value, activeValues) => {
++    const isActive = activeValues.has(value);
++    setSearchParams((prev) => {
++      const next = new URLSearchParams(prev);
++      const values = parseFilterValues(prev.get(paramKey));
++      if (values.has(value)) values.delete(value); else values.add(value);
++      if (values.size) next.set(paramKey, serializeFilterValues(values));
++      else next.delete(paramKey);
++      return next;
++    });
++    // The triage container is always mounted, so its anchor exists before the
++    // filtered re-render — scroll right away (no deferral needed).
++    if (!isActive && typeof document !== 'undefined') {
++      const triageContainer = document.getElementById(FINDINGS_TRIAGE_ANCHOR_ID);
++      triageContainer?.scrollIntoView({ behavior: 'smooth', block: 'start' });
++      triageContainer?.focus({ preventScroll: true });
++    }
++  };
++  const filterByCategory = (category) =>
++    toggleFilter(FINDING_FILTER_PARAMS.category, category, activeCategories);
++  const filterByCheck = (checkId) =>
++    toggleFilter(FINDING_FILTER_PARAMS.check, checkId, activeChecks);
++  // A breakdown row only deep-links when the triage can actually filter to it.
++  // When the caller doesn't supply the filterable sets (older callers / tests),
++  // default to clickable rather than disabling every row.
++  const canFilterCategory = (category) => !filterableCategories || filterableCategories.has(category);
++  const canFilterCheck = (checkId) => !filterableCheckIds || filterableCheckIds.has(checkId);
++
+   // Guard against a stale response: switching series (or a fast refresh) can let
+   // an older fetch resolve last and render the wrong series' health. Only the
+   // latest requested series is allowed to write state.
+@@ -215,19 +291,31 @@ export default function EditorialHealthPanel({ seriesId, refreshKey = 0, checksB
+       {categories.length ? (
+         <div className="border-t border-port-border/60 pt-2.5">
+           <span className="block text-[10px] uppercase tracking-wide text-gray-600">Open by category</span>
+-          <ul className="mt-1 flex flex-wrap gap-x-3 gap-y-1">
++          <ul className="mt-1 flex flex-wrap gap-x-2 gap-y-1">
+             {categories.map(({ category, count }) => {
+               const regressed = regressions.find((r) => r.category === category);
++              const active = activeCategories.has(category);
++              const canFilter = canFilterCategory(category);
+               return (
+-                <li key={category} className="flex items-center gap-1 text-[11px] text-gray-400">
+-                  <span className="text-gray-300">{category}</span>
+-                  <span className="text-gray-500">{count}</span>
+-                  {regressed ? (
+-                    <span className="flex items-center gap-0.5 text-port-error" title={`Regressed: ${regressed.from} → ${regressed.to} since the previous revision`}>
+-                      <TrendingUp size={11} />
+-                      {regressed.from}→{regressed.to}
+-                    </span>
+-                  ) : null}
++                <li key={category}>
++                  <FilterRowButton
++                    active={active}
++                    interactive={canFilter}
++                    onClick={() => filterByCategory(category)}
++                    title={canFilter
++                      ? (active ? `Clear the ${category} filter` : `Filter findings to ${category}`)
++                      : `${category} findings aren't in the triage filter`}
++                    className="gap-1"
++                  >
++                    <span className={active ? 'text-gray-100' : 'text-gray-300'}>{category}</span>
++                    <span className="text-gray-500">{count}</span>
++                    {regressed ? (
++                      <span className="flex items-center gap-0.5 text-port-error" title={`Regressed: ${regressed.from} → ${regressed.to} since the previous revision`}>
++                        <TrendingUp size={11} />
++                        {regressed.from}→{regressed.to}
++                      </span>
++                    ) : null}
++                  </FilterRowButton>
+                 </li>
+               );
+             })}
+@@ -240,20 +328,34 @@ export default function EditorialHealthPanel({ seriesId, refreshKey = 0, checksB
+       {checkRows.length ? (
+         <div className="border-t border-port-border/60 pt-2.5">
+           <span className="block text-[10px] uppercase tracking-wide text-gray-600">Open by check</span>
+-          <ul className="mt-1 space-y-1">
+-            {checkRows.map(({ checkId, label, count, counts, regressed }) => (
+-              <li key={checkId} className="flex items-center gap-2 text-[11px] text-gray-400">
+-                <span className="min-w-0 flex-1 truncate text-gray-300" title={label}>{label}</span>
+-                {regressed ? (
+-                  <span className="flex shrink-0 items-center gap-0.5 text-port-error" title={`Regressed: ${regressed.from} → ${regressed.to} since the previous revision`}>
+-                    <TrendingUp size={11} />
+-                    {regressed.from}→{regressed.to}
+-                  </span>
+-                ) : null}
+-                <span className="w-5 shrink-0 text-right text-gray-500">{count}</span>
+-                <CheckSparkline counts={counts} />
+-              </li>
+-            ))}
++          <ul className="mt-1 space-y-0.5">
++            {checkRows.map(({ checkId, label, count, counts, regressed }) => {
++              const active = activeChecks.has(checkId);
++              const canFilter = canFilterCheck(checkId);
++              return (
++                <li key={checkId}>
++                  <FilterRowButton
++                    active={active}
++                    interactive={canFilter}
++                    onClick={() => filterByCheck(checkId)}
++                    title={canFilter
++                      ? (active ? `Clear the ${label} filter` : `Filter findings to ${label}`)
++                      : `${label} findings aren't in the triage filter`}
++                    className="w-full gap-2 text-gray-400"
++                  >
++                    <span className={`min-w-0 flex-1 truncate text-left ${active ? 'text-gray-100' : 'text-gray-300'}`} title={label}>{label}</span>
++                    {regressed ? (
++                      <span className="flex shrink-0 items-center gap-0.5 text-port-error" title={`Regressed: ${regressed.from} → ${regressed.to} since the previous revision`}>
++                        <TrendingUp size={11} />
++                        {regressed.from}→{regressed.to}
++                      </span>
++                    ) : null}
++                    <span className="w-5 shrink-0 text-right text-gray-500">{count}</span>
++                    <CheckSparkline counts={counts} />
++                  </FilterRowButton>
++                </li>
++              );
++            })}
+           </ul>
+           {hiddenCheckCount ? (
+             <p className="mt-1 text-[10px] text-gray-600">+{hiddenCheckCount} more check{hiddenCheckCount === 1 ? '' : 's'} with open findings</p>
+diff --git a/client/src/components/pipeline/editorial/EditorialHealthPanel.test.jsx b/client/src/components/pipeline/editorial/EditorialHealthPanel.test.jsx
+index 533c631a..6e37b0ee 100644
+--- a/client/src/components/pipeline/editorial/EditorialHealthPanel.test.jsx
++++ b/client/src/components/pipeline/editorial/EditorialHealthPanel.test.jsx
+@@ -1,5 +1,6 @@
+ import { describe, it, expect, vi, beforeEach } from 'vitest';
+ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
++import { MemoryRouter, useSearchParams } from 'react-router-dom';
+ import EditorialHealthPanel from './EditorialHealthPanel';
+
+ const getEditorialHealth = vi.fn();
+@@ -10,6 +11,21 @@ vi.mock('../../../services/api', () => ({
+ }));
+ vi.mock('../../ui/Toast', () => ({ default: { error: vi.fn(), success: vi.fn() } }));
+
++// Surfaces the live URL query string so a click that deep-links a triage filter
++// (#1606) is assertable.
++function Probe() {
++  const [sp] = useSearchParams();
++  return <div data-testid="search-params">{sp.toString()}</div>;
++}
++const wrap = (props, route = '/') => (
++  <MemoryRouter initialEntries={[route]}>
++    <EditorialHealthPanel {...props} />
++    <Probe />
++  </MemoryRouter>
++);
++const renderPanel = (props = {}, route) => render(wrap(props, route));
++const params = () => screen.getByTestId('search-params').textContent;
++
+ const health = (over = {}) => ({
+   seriesId: 'ser-1',
+   score: 83,
+@@ -31,18 +47,22 @@ const health = (over = {}) => ({
+ beforeEach(() => {
+   getEditorialHealth.mockReset();
+   setEditorialReadinessGate.mockReset();
++  // jsdom doesn't implement scrollIntoView; stub it so the deep-link scroll is a no-op.
++  window.HTMLElement.prototype.scrollIntoView = vi.fn();
+ });
+
+ describe('EditorialHealthPanel', () => {
+   it('renders nothing without a series', () => {
+-    const { container } = render(<EditorialHealthPanel seriesId="" />);
+-    expect(container.firstChild).toBeNull();
++    const { container } = renderPanel({ seriesId: '' });
++    // The router + probe still render; the panel itself renders null.
++    expect(screen.queryByText('Editorial Health')).toBeNull();
+     expect(getEditorialHealth).not.toHaveBeenCalled();
++    expect(container).toBeTruthy();
+   });
+
+   it('shows the score, readiness, severity breakdown and trend delta', async () => {
+     getEditorialHealth.mockResolvedValue(health());
+-    render(<EditorialHealthPanel seriesId="ser-1" />);
++    renderPanel({ seriesId: 'ser-1' });
+     expect(await screen.findByText('83')).toBeTruthy();
+     expect(screen.getByText('Not ready')).toBeTruthy();
+     expect(screen.getByText('+13')).toBeTruthy();
+@@ -53,13 +73,13 @@ describe('EditorialHealthPanel', () => {
+     getEditorialHealth.mockResolvedValue(health({
+       trend: { points: [{ score: 90 }, { score: 70 }], regressions: [{ category: 'continuity', from: 1, to: 2 }], delta: -20 },
+     }));
+-    render(<EditorialHealthPanel seriesId="ser-1" />);
++    renderPanel({ seriesId: 'ser-1' });
+     expect(await screen.findByText('1→2')).toBeTruthy();
+   });
+
+   it('marks ready when the gate is satisfied', async () => {
+     getEditorialHealth.mockResolvedValue(health({ ready: true, score: 100, openBySeverity: { high: 0, medium: 0, low: 0 }, open: 0 }));
+-    render(<EditorialHealthPanel seriesId="ser-1" />);
++    renderPanel({ seriesId: 'ser-1' });
+     expect(await screen.findByText('Ready')).toBeTruthy();
+     expect(screen.getByText('No open findings')).toBeTruthy();
+   });
+@@ -67,7 +87,7 @@ describe('EditorialHealthPanel', () => {
+   it('persists a readiness-gate change and refetches', async () => {
+     getEditorialHealth.mockResolvedValue(health());
+     setEditorialReadinessGate.mockResolvedValue({ readinessGate: 'noOpenHighOrMedium' });
+-    render(<EditorialHealthPanel seriesId="ser-1" />);
++    renderPanel({ seriesId: 'ser-1' });
+     await screen.findByText('83');
+     fireEvent.change(screen.getByLabelText('Ready when:'), { target: { value: 'noOpenHighOrMedium' } });
+     await waitFor(() => expect(setEditorialReadinessGate).toHaveBeenCalledWith('noOpenHighOrMedium', { silent: true }));
+@@ -77,9 +97,9 @@ describe('EditorialHealthPanel', () => {
+
+   it('refetches when refreshKey changes', async () => {
+     getEditorialHealth.mockResolvedValue(health());
+-    const { rerender } = render(<EditorialHealthPanel seriesId="ser-1" refreshKey={0} />);
++    const { rerender } = renderPanel({ seriesId: 'ser-1', refreshKey: 0 });
+     await screen.findByText('83');
+-    rerender(<EditorialHealthPanel seriesId="ser-1" refreshKey={1} />);
++    rerender(wrap({ seriesId: 'ser-1', refreshKey: 1 }));
+     await waitFor(() => expect(getEditorialHealth).toHaveBeenCalledTimes(2));
+   });
+
+@@ -87,7 +107,7 @@ describe('EditorialHealthPanel', () => {
+     getEditorialHealth.mockResolvedValue(health({
+       trend: { points: [{ score: 83 }], regressions: [], delta: 0 },
+     }));
+-    render(<EditorialHealthPanel seriesId="ser-1" />);
++    renderPanel({ seriesId: 'ser-1' });
+     await screen.findByText('83');
+     // The "+0/0" delta chip should not render for a single revision.
+     expect(screen.queryByTitle('Change since the previous revision')).toBeNull();
+@@ -110,7 +130,7 @@ describe('EditorialHealthPanel', () => {
+       'naming.dissimilar-names': { label: 'Name dissimilarity' },
+       'roster.economy': { label: 'Cast economy' },
+     };
+-    render(<EditorialHealthPanel seriesId="ser-1" checksById={checksById} />);
++    renderPanel({ seriesId: 'ser-1', checksById });
+     await screen.findByText('83');
+     expect(screen.getByText('Open by check')).toBeTruthy();
+     // Labels resolved from the catalog, sorted by count desc.
+@@ -125,7 +145,7 @@ describe('EditorialHealthPanel', () => {
+       openByCheck: { 'custom.orphan': 1 },
+       trend: { points: [{ score: 83, openByCheck: { 'custom.orphan': 1 } }], regressions: [], checkRegressions: [], delta: 0 },
+     }));
+-    render(<EditorialHealthPanel seriesId="ser-1" />);
++    renderPanel({ seriesId: 'ser-1' });
+     await screen.findByText('83');
+     expect(screen.getByText('custom.orphan')).toBeTruthy();
+   });
+@@ -138,7 +158,7 @@ describe('EditorialHealthPanel', () => {
+         { issueNumber: 3, score: 100, open: 0, openBySeverity: { high: 0, medium: 0, low: 0 } },
+       ],
+     }));
+-    render(<EditorialHealthPanel seriesId="ser-1" />);
++    renderPanel({ seriesId: 'ser-1' });
+     await screen.findByText('83');
+     // Two issues carry open findings (issue 3 is clean → excluded); expand.
+     const toggle = screen.getByText(/By issue \(2\)/);
+@@ -147,4 +167,86 @@ describe('EditorialHealthPanel', () => {
+     expect(screen.getByText('Issue 1')).toBeTruthy();
+     expect(screen.queryByText('Issue 3')).toBeNull();
+   });
++
++  it('deep-links the triage category filter when a category row is clicked (#1606)', async () => {
++    getEditorialHealth.mockResolvedValue(health());
++    renderPanel({ seriesId: 'ser-1' }, '/?series=ser-1');
++    await screen.findByText('83');
++    fireEvent.click(screen.getByTitle('Filter findings to continuity'));
++    await waitFor(() => expect(params()).toContain('fcat=continuity'));
++    // The page's own params are preserved (filter is additive, not a replace).
++    expect(params()).toContain('series=ser-1');
++  });
++
++  it('toggles the category filter off when its active row is clicked again (#1606)', async () => {
++    getEditorialHealth.mockResolvedValue(health());
++    renderPanel({ seriesId: 'ser-1' }, '/?fcat=continuity');
++    await screen.findByText('83');
++    // The active row offers a clear affordance.
++    fireEvent.click(screen.getByTitle('Clear the continuity filter'));
++    await waitFor(() => expect(params()).not.toContain('fcat=continuity'));
++  });
++
++  it('additively toggles multiple category rows without clearing siblings (#1606)', async () => {
++    getEditorialHealth.mockResolvedValue(health());
++    renderPanel({ seriesId: 'ser-1' }, '/?keep=yes&fcat=continuity');
++    await screen.findByText('83');
++    fireEvent.click(screen.getByTitle('Filter findings to pacing'));
++    await waitFor(() => expect(params()).toContain('fcat=continuity%2Cpacing'));
++    expect(screen.getByTitle('Clear the continuity filter')).toBeTruthy();
++    expect(screen.getByTitle('Clear the pacing filter')).toBeTruthy();
++    fireEvent.click(screen.getByTitle('Clear the continuity filter'));
++    await waitFor(() => expect(params()).toContain('fcat=pacing'));
++    expect(params()).toContain('keep=yes');
++  });
++
++  it('deep-links the triage check filter when a check row is clicked (#1606)', async () => {
++    getEditorialHealth.mockResolvedValue(health({
++      openByCheck: { 'roster.economy': 1 },
++      trend: { points: [{ score: 83, openByCheck: { 'roster.economy': 1 } }], regressions: [], checkRegressions: [], delta: 0 },
++    }));
++    renderPanel({ seriesId: 'ser-1', checksById: { 'roster.economy': { label: 'Cast economy' } } });
++    await screen.findByText('83');
++    fireEvent.click(screen.getByTitle('Filter findings to Cast economy'));
++    await waitFor(() => expect(params()).toContain('fcheck=roster.economy'));
++  });
++
++  it('renders a non-triage-filterable check row as static text, not a deep-link (#1606)', async () => {
++    // The synthetic `completeness` bucket counts null-checkId findings the triage
++    // drops, so it isn't in the filterable set — its row must not link to an empty list.
++    getEditorialHealth.mockResolvedValue(health({
++      openByCheck: { completeness: 2 },
++      trend: { points: [{ score: 83, openByCheck: { completeness: 2 } }], regressions: [], checkRegressions: [], delta: 0 },
++    }));
++    renderPanel({ seriesId: 'ser-1', filterableCheckIds: new Set(), filterableCategories: new Set() });
++    await screen.findByText('83');
++    const row = screen.getByTitle(/completeness findings aren't in the triage filter/i);
++    expect(row.tagName).toBe('SPAN');
++    expect(screen.queryByTitle('Filter findings to completeness')).toBeNull();
++  });
++
++  it('renders a non-triage-filterable category row as static text (#1606)', async () => {
++    getEditorialHealth.mockResolvedValue(health({ openByCategory: { plot: 2 } }));
++    renderPanel({ seriesId: 'ser-1', filterableCheckIds: new Set(), filterableCategories: new Set() });
++    await screen.findByText('83');
++    const row = screen.getByTitle(/plot findings aren't in the triage filter/i);
++    expect(row.tagName).toBe('SPAN');
++    expect(screen.queryByTitle('Filter findings to plot')).toBeNull();
++  });
++
++  it('keeps a filterable check row clickable when filterable sets are provided (#1606)', async () => {
++    getEditorialHealth.mockResolvedValue(health({
++      openByCheck: { 'roster.economy': 1 },
++      trend: { points: [{ score: 83, openByCheck: { 'roster.economy': 1 } }], regressions: [], checkRegressions: [], delta: 0 },
++    }));
++    renderPanel({
++      seriesId: 'ser-1',
++      checksById: { 'roster.economy': { label: 'Cast economy' } },
++      filterableCheckIds: new Set(['roster.economy']),
++      filterableCategories: new Set(),
++    });
++    await screen.findByText('83');
++    fireEvent.click(screen.getByTitle('Filter findings to Cast economy'));
++    await waitFor(() => expect(params()).toContain('fcheck=roster.economy'));
++  });
+ });
+diff --git a/client/src/lib/editorialChecks.js b/client/src/lib/editorialChecks.js
+index bd0a0719..54d0bed6 100644
+--- a/client/src/lib/editorialChecks.js
++++ b/client/src/lib/editorialChecks.js
+@@ -15,6 +15,45 @@ export const CHECK_SCOPE_LABELS = Object.freeze({
+ export const scopeLabel = (scope) =>
+   CHECK_SCOPE_LABELS[scope] || (scope ? scope[0].toUpperCase() + scope.slice(1) : 'Other');
+
++// A finding's editorial category (continuity / pacing / style / …) — distinct
++// from its check scope. Mirrors the server's normalization in editorialScore.js
++// so the triage facet and the health panel's "open by category" agree.
++export const normCategory = (comment) =>
++  (typeof comment?.category === 'string' && comment.category) ? comment.category : 'other';
++
++// Title-case a raw category token for display in the toolbar select.
++export const categoryLabel = (category) =>
++  category ? category[0].toUpperCase() + category.slice(1) : 'Other';
++
++export const deriveFilterableFindingFacets = (comments = []) => {
++  const openCheckSourced = comments.filter((comment) => comment?.checkId && comment.status === 'open');
++  return {
++    checkIds: new Set(openCheckSourced.map((comment) => comment.checkId)),
++    categories: new Set(openCheckSourced.map((comment) => normCategory(comment))),
++  };
++};
++
++// URL params that persist the triage filters/sort (#1600). `f`-prefixed so they
++// never collide with the page's own `series` / `custom` params. Exported (rather
++// than living in the triage component) so the health panel can deep-link the
++// triage to a category/check from its clickable breakdown rows (#1606).
++export const FINDING_FILTER_PARAMS = Object.freeze({
++  severity: 'fsev',
++  status: 'fstatus',
++  scope: 'fscope',
++  check: 'fcheck',
++  issue: 'fissue',
++  category: 'fcat',
++  query: 'fq',
++  sort: 'fsort',
++});
++export const ALL_FINDING_FILTER_PARAMS = Object.freeze(Object.values(FINDING_FILTER_PARAMS));
++
++// DOM id on the triage container so the health panel can scroll the findings
++// list into view after deep-linking a filter (#1606) — single source of truth
++// shared by the panel (scroll target) and the triage (anchor).
++export const FINDINGS_TRIAGE_ANCHOR_ID = 'editorial-findings-triage';
++
+ const SEVERITY_ORDER = Object.freeze(['high', 'medium', 'low']);
+
+ /**
+@@ -174,12 +213,15 @@ export function deriveFindingFacets(groups = []) {
+   const scopes = new Map();
+   const checks = [];
+   const issues = new Map();
++  const categories = new Map();
+   for (const g of groups) {
+     if (!scopes.has(g.scope)) scopes.set(g.scope, scopeLabel(g.scope));
+     checks.push({ id: g.checkId, label: g.label });
+     for (const c of g.comments) {
+       severities.add(normSeverity(c));
+       statuses.add(normStatus(c));
++      const cat = normCategory(c);
++      if (!categories.has(cat)) categories.set(cat, categoryLabel(cat));
+       const key = findingIssueKey(c);
+       if (!issues.has(key)) issues.set(key, key === 'none' ? 'Series-wide' : `Issue ${c.issueNumber}`);
+     }
+@@ -197,15 +239,19 @@ export function deriveFindingFacets(groups = []) {
+     scopes: [...scopes.entries()].map(([scope, label]) => ({ scope, label })),
+     checks,
+     issues: issueList,
++    categories: [...categories.entries()]
++      .map(([category, label]) => ({ category, label }))
++      .sort((a, b) => a.label.localeCompare(b.label)),
+   };
+ }
+
+ // A single comment passes the comment-level filters (severity/status/issue/query).
+ // Scope + check are group-level and filtered separately.
+ function commentPassesFilters(c, filters) {
+-  const { severities, statuses, issues, query } = filters;
++  const { severities, statuses, issues, categories, query } = filters;
+   if (severities?.size && !severities.has(normSeverity(c))) return false;
+   if (statuses?.size && !statuses.has(normStatus(c))) return false;
++  if (categories?.size && !categories.has(normCategory(c))) return false;
+   if (issues?.size && !issues.has(findingIssueKey(c))) return false;
+   if (query) {
+     const hay = `${c.problem || ''} ${c.location || ''}`.toLowerCase();
+@@ -290,7 +336,8 @@ function sortGroups(groups, sort) {
+  * scope/check is filtered out or that have no comment matching the comment-level
+  * filters, recomputes each surviving group's counts, sorts findings within each
+  * group, then orders the groups. `filters` carries Sets for severities, statuses,
+- * scopes, checkIds, issues plus a `query` string; any empty/absent facet is "all".
++ * scopes, checkIds, issues, categories plus a `query` string; any empty/absent
++ * facet is "all".
+  */
+ export function applyFindingsView(groups = [], filters = {}, sort = 'scope') {
+   const view = normalizeFindingSort(sort);
+diff --git a/client/src/lib/editorialChecks.test.js b/client/src/lib/editorialChecks.test.js
+index 0018327f..b3002b06 100644
+--- a/client/src/lib/editorialChecks.test.js
++++ b/client/src/lib/editorialChecks.test.js
+@@ -6,6 +6,9 @@ import {
+   openFindingsTotal,
+   findingManuscriptLink,
+   scopeLabel,
++  categoryLabel,
++  normCategory,
++  deriveFilterableFindingFacets,
+   deriveFindingFacets,
+   applyFindingsView,
+   normalizeFindingSort,
+@@ -154,9 +157,9 @@ describe('scopeLabel', () => {
+ });
+
+ const findingsFixture = () => [
+-  { id: 'a1', checkId: 'pacing', status: 'open', severity: 'high', issueNumber: 2, problem: 'Slow open', location: 'p1' },
+-  { id: 'a2', checkId: 'pacing', status: 'dismissed', severity: 'low', issueNumber: 2, problem: 'Old note' },
+-  { id: 'b1', checkId: 'naming', status: 'open', severity: 'medium', issueNumber: 1, problem: 'Confusable names' },
++  { id: 'a1', checkId: 'pacing', category: 'pacing', status: 'open', severity: 'high', issueNumber: 2, problem: 'Slow open', location: 'p1' },
++  { id: 'a2', checkId: 'pacing', category: 'pacing', status: 'dismissed', severity: 'low', issueNumber: 2, problem: 'Old note' },
++  { id: 'b1', checkId: 'naming', category: 'naming', status: 'open', severity: 'medium', issueNumber: 1, problem: 'Confusable names' },
+   { id: 'b2', checkId: 'naming', status: 'open', severity: 'low', issueNumber: null, problem: 'Series-wide naming' },
+ ];
+ const fixtureRows = {
+@@ -192,6 +195,37 @@ describe('deriveFindingFacets', () => {
+     expect(f.scopes.map((s) => s.scope)).toEqual(['scene', 'series']);
+     expect(f.issues.map((i) => i.key)).toEqual(['1', '2', 'none']);
+     expect(f.issues.find((i) => i.key === 'none').label).toBe('Series-wide');
++    // Categories come from the finding's `category` field; a finding without one
++    // buckets under 'other'. Sorted by display label.
++    expect(f.categories.map((c) => c.category)).toEqual(['naming', 'other', 'pacing']);
++    expect(f.categories.map((c) => c.label)).toEqual(['Naming', 'Other', 'Pacing']);
++  });
++});
++
++describe('normCategory / categoryLabel', () => {
++  it('normalizes a finding category, bucketing missing/blank under "other"', () => {
++    expect(normCategory({ category: 'continuity' })).toBe('continuity');
++    expect(normCategory({ category: '' })).toBe('other');
++    expect(normCategory({})).toBe('other');
++    expect(normCategory(null)).toBe('other');
++  });
++
++  it('title-cases a category token for display', () => {
++    expect(categoryLabel('continuity')).toBe('Continuity');
++    expect(categoryLabel('')).toBe('Other');
++  });
++});
++
++describe('deriveFilterableFindingFacets', () => {
++  it('includes only open check-sourced findings and normalizes categories', () => {
++    const facets = deriveFilterableFindingFacets([
++      { checkId: 'pacing.drag', category: 'pacing', status: 'open' },
++      { checkId: 'naming.similar', category: '', status: 'open' },
++      { checkId: 'closed.check', category: 'style', status: 'dismissed' },
++      { checkId: null, category: 'continuity', status: 'open' },
++    ]);
++    expect([...facets.checkIds]).toEqual(['pacing.drag', 'naming.similar']);
++    expect([...facets.categories]).toEqual(['pacing', 'other']);
+   });
+ });
+
+@@ -218,13 +252,24 @@ describe('applyFindingsView', () => {
+     expect(ids).toEqual(['a1', 'b1', 'b2']);
+   });
+
+-  it('filters by scope (category) and by check id', () => {
++  it('filters by scope and by check id', () => {
+     const byScope = applyFindingsView(groupsFixture(), { scopes: new Set(['series']) }, 'scope');
+     expect(byScope.map((g) => g.checkId)).toEqual(['naming']);
+     const byCheck = applyFindingsView(groupsFixture(), { checkIds: new Set(['pacing']) }, 'scope');
+     expect(byCheck.map((g) => g.checkId)).toEqual(['pacing']);
+   });
+
++  it('filters by finding category (comment-level), bucketing un-categorized under "other"', () => {
++    const byPacing = applyFindingsView(groupsFixture(), { categories: new Set(['pacing']) }, 'scope');
++    expect(byPacing.flatMap((g) => g.comments.map((c) => c.id))).toEqual(['a1', 'a2']);
++    // 'naming' category only matches b1 (b2 has no category → 'other'), so the
++    // naming group keeps just b1.
++    const byNaming = applyFindingsView(groupsFixture(), { categories: new Set(['naming']) }, 'scope');
++    expect(byNaming.flatMap((g) => g.comments.map((c) => c.id))).toEqual(['b1']);
++    const byOther = applyFindingsView(groupsFixture(), { categories: new Set(['other']) }, 'scope');
++    expect(byOther.flatMap((g) => g.comments.map((c) => c.id))).toEqual(['b2']);
++  });
++
+   it('filters by issue, including the series-wide "none" bucket', () => {
+     const issue2 = applyFindingsView(groupsFixture(), { issues: new Set(['2']) }, 'scope');
+     expect(issue2.flatMap((g) => g.comments.map((c) => c.id))).toEqual(['a1', 'a2']);
+diff --git a/client/src/pages/PipelineEditorialChecks.jsx b/client/src/pages/PipelineEditorialChecks.jsx
+index f0b220d4..3efda673 100644
+--- a/client/src/pages/PipelineEditorialChecks.jsx
++++ b/client/src/pages/PipelineEditorialChecks.jsx
+@@ -20,7 +20,7 @@ import EditorialCustomCheckForm from '../components/pipeline/editorial/Editorial
+ import EditorialFindingsTriage from '../components/pipeline/editorial/EditorialFindingsTriage';
+ import EditorialHealthPanel from '../components/pipeline/editorial/EditorialHealthPanel';
+ import ProviderModelSelector from '../components/ProviderModelSelector';
+-import { groupChecksByScope } from '../lib/editorialChecks';
++import { deriveFilterableFindingFacets, groupChecksByScope } from '../lib/editorialChecks';
+ import { usePipelineProgress } from '../hooks/usePipelineProgress';
+ import useProviderModels from '../hooks/useProviderModels';
+ import {
+@@ -84,6 +84,17 @@ export default function PipelineEditorialChecks() {
+   );
+   const enabledCount = useMemo(() => checks.filter((c) => c.enabled).length, [checks]);
+   const scopeGroups = useMemo(() => groupChecksByScope(checks), [checks]);
++  // The check/category values the health panel can deep-link to (#1606). The
++  // panel's "Open by check/category" rows count OPEN findings, and the triage only
++  // lists check-sourced findings (it drops null-checkId completeness/legacy ones).
++  // So a row is navigable iff there's an OPEN check-sourced finding for it — match
++  // that exactly (open + checkId), or a row whose open count is all completeness
++  // findings (or only resolved check-sourced ones) would deep-link to a list with
++  // none of the open findings it summarizes.
++  const triageFilterableFacets = useMemo(
++    () => deriveFilterableFindingFacets(comments),
++    [comments],
++  );
+   // Config saves read server settings, so a run that fires before a save lands
+   // would use stale config — gate the run buttons while any save is in flight.
+   const anySaving = savingIds.size > 0;
+@@ -570,7 +581,7 @@ export default function PipelineEditorialChecks() {
+               <p className="rounded-lg border border-dashed border-port-border p-4 text-center text-xs text-gray-500">Select a series to view its findings.</p>
+             ) : (
+               <>
+-                <EditorialHealthPanel seriesId={seriesId} refreshKey={healthRefresh} checksById={checksById} />
++                <EditorialHealthPanel seriesId={seriesId} refreshKey={healthRefresh} checksById={checksById} filterableCheckIds={triageFilterableFacets.checkIds} filterableCategories={triageFilterableFacets.categories} />
+                 {loadingFindings ? (
+                   <p className="flex items-center gap-2 text-sm text-gray-400"><Loader2 size={16} className="animate-spin" /> Loading findings…</p>
+                 ) : (

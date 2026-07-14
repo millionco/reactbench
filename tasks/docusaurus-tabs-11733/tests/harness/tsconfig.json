@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "allowSyntheticDefaultImports": true,
+    "baseUrl": ".",
+    "esModuleInterop": true,
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "target": "ES2022",
+    "types": ["node", "vitest/globals"],
+    "paths": {
+      "@tabs": ["/app/packages/docusaurus-theme-classic/lib/theme/Tabs/index.d.ts"],
+      "@tab-item": ["/app/packages/docusaurus-theme-classic/lib/theme/TabItem/index.d.ts"],
+      "@theme/TabItem": ["/app/packages/docusaurus-theme-classic/lib/theme/TabItem/index.d.ts"],
+      "@tabs-utils": ["/app/packages/docusaurus-theme-common/lib/utils/tabsUtils.d.ts"],
+      "@docusaurus/theme-common/internal": ["src/theme-common-internal.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "specs/**/*.ts", "specs/**/*.tsx", "e2e/**/*.ts"]
+}

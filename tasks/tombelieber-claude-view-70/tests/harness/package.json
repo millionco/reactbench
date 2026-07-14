@@ -1,0 +1,33 @@
+{
+  "name": "claude-view-interaction-verifier-harness",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "packageManager": "pnpm@11.0.0",
+  "scripts": {
+    "test": "vitest run",
+    "e2e": "playwright test"
+  },
+  "dependencies": {
+    "clsx": "2.1.1",
+    "lucide-react": "0.575.0",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "react-markdown": "10.1.0",
+    "remark-gfm": "4.0.1",
+    "tailwind-merge": "3.5.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.1",
+    "@testing-library/jest-dom": "6.6.3",
+    "@testing-library/react": "16.2.0",
+    "@types/node": "22.20.1",
+    "@types/react": "19.2.2",
+    "@types/react-dom": "19.2.2",
+    "@vitejs/plugin-react": "4.3.4",
+    "jsdom": "25.0.1",
+    "typescript": "5.7.2",
+    "vite": "5.4.21",
+    "vitest": "2.1.9"
+  }
+}

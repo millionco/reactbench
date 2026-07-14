@@ -1,0 +1,38 @@
+diff --git a/src/plugins/slideshow/SlideshowContext.tsx b/src/plugins/slideshow/SlideshowContext.tsx
+index 5575c0c..469bd0f 100644
+--- a/src/plugins/slideshow/SlideshowContext.tsx
++++ b/src/plugins/slideshow/SlideshowContext.tsx
+@@ -84,13 +84,17 @@ export function SlideshowContextProvider({ slideshow, carousel: { finite }, on,
+     }, delay);
+   });
+ 
+-  React.useEffect(scheduleNextSlide, [currentIndex, playing, scheduleNextSlide]);
++  React.useEffect(scheduleNextSlide, [currentIndex, scheduleNextSlide]);
+ 
+   React.useEffect(() => {
+-    if (playing && disabled) {
+-      setPlaying(false);
++    if (playing) {
++      if (disabled) {
++        cancelScheduler();
++      } else {
++        scheduleNextSlide();
++      }
+     }
+-  }, [currentIndex, playing, disabled]);
++  }, [currentIndex, playing, disabled, cancelScheduler, scheduleNextSlide]);
+ 
+   const onSlideshowStart = useEventCallback(() => on.slideshowStart?.());
+ 
+@@ -112,11 +116,9 @@ export function SlideshowContextProvider({ slideshow, carousel: { finite }, on,
+         cancelScheduler,
+         subscribe(ACTIVE_SLIDE_LOADING, () => {
+           slideStatus.current = SLIDE_STATUS_LOADING;
+-          cancelScheduler();
+         }),
+         subscribe(ACTIVE_SLIDE_PLAYING, () => {
+           slideStatus.current = SLIDE_STATUS_PLAYING;
+-          cancelScheduler();
+         }),
+         subscribe(ACTIVE_SLIDE_ERROR, () => {
+           slideStatus.current = SLIDE_STATUS_ERROR;

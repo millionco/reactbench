@@ -1,0 +1,225 @@
+diff --git a/src/features/settings/components/hotkey-editor.tsx b/src/features/settings/components/hotkey-editor.tsx
+index 2aafd87..3d46385 100644
+--- a/src/features/settings/components/hotkey-editor.tsx
++++ b/src/features/settings/components/hotkey-editor.tsx
+@@ -402,7 +402,7 @@ export function HotkeyEditor() {
+   const resetHotkeyBinding = useSettingsStore((state) => state.resetHotkeyBinding)
+   const resetHotkeys = useSettingsStore((state) => state.resetHotkeys)
+   const fileInputRef = useRef<HTMLInputElement | null>(null)
+-  const partialConflictOverrideSnapshotRef = useRef<typeof hotkeyOverrides | null>(null)
++  const captureOverrideSnapshotRef = useRef<typeof hotkeyOverrides | null>(null)
+ 
+   const [selectedKey, setSelectedKey] = useState<HotkeyKey>('PLAY_PAUSE')
+   const [activeLayer, setActiveLayer] = useState<HotkeyEditorSection | null>(null)
+@@ -411,6 +411,7 @@ export function HotkeyEditor() {
+   const [captureKey, setCaptureKey] = useState<HotkeyKey | null>(null)
+   const [draftBinding, setDraftBinding] = useState('')
+   const [previewBinding, setPreviewBinding] = useState('')
++  const [stagedConflictKeys, setStagedConflictKeys] = useState<HotkeyKey[]>([])
+   const [searchQuery, setSearchQuery] = useState('')
+   const [isResetAllDialogOpen, setIsResetAllDialogOpen] = useState(false)
+ 
+@@ -425,6 +426,9 @@ export function HotkeyEditor() {
+     : hotkeys[selectedKey]
+   const captureConflicts =
+     captureKey && draftBinding ? findHotkeyConflicts(hotkeys, draftBinding, captureKey) : []
++  const unresolvedCaptureConflicts = captureConflicts.filter(
++    (conflictKey) => !stagedConflictKeys.includes(conflictKey),
++  )
+   const isDraftChanged = Boolean(
+     captureKey && draftBinding && normalizeHotkeyBinding(draftBinding) !== hotkeys[captureKey],
+   )
+@@ -432,7 +436,7 @@ export function HotkeyEditor() {
+     captureKey &&
+     draftBinding &&
+     hasHotkeyPrimaryToken(draftBinding) &&
+-    captureConflicts.length === 0 &&
++    unresolvedCaptureConflicts.length === 0 &&
+     isDraftChanged,
+   )
+   const selectedBrowserHotkey = getBrowserHostileHotkey(hotkeys[selectedKey])
+@@ -450,17 +454,18 @@ export function HotkeyEditor() {
+   )
+   const hasSearchQuery = searchQuery.trim().length > 0
+ 
+-  const stopCapture = ({ restorePartialOverwrites = true } = {}) => {
+-    const snapshot = partialConflictOverrideSnapshotRef.current
+-    partialConflictOverrideSnapshotRef.current = null
++  const stopCapture = ({ restoreSnapshot = true } = {}) => {
++    const snapshot = captureOverrideSnapshotRef.current
++    captureOverrideSnapshotRef.current = null
+ 
+-    if (restorePartialOverwrites && snapshot) {
++    if (restoreSnapshot && snapshot) {
+       replaceHotkeyOverrides(snapshot)
+     }
+ 
+     setCaptureKey(null)
+     setDraftBinding('')
+     setPreviewBinding('')
++    setStagedConflictKeys([])
+   }
+ 
+   useEffect(() => {
+@@ -468,9 +473,9 @@ export function HotkeyEditor() {
+       return undefined
+     }
+ 
+-    const stopCaptureAndRestoreOverwrites = () => {
+-      const snapshot = partialConflictOverrideSnapshotRef.current
+-      partialConflictOverrideSnapshotRef.current = null
++    const stopCaptureAndRestoreSnapshot = () => {
++      const snapshot = captureOverrideSnapshotRef.current
++      captureOverrideSnapshotRef.current = null
+ 
+       if (snapshot) {
+         useSettingsStore.getState().replaceHotkeyOverrides(snapshot)
+@@ -479,12 +484,13 @@ export function HotkeyEditor() {
+       setCaptureKey(null)
+       setDraftBinding('')
+       setPreviewBinding('')
++      setStagedConflictKeys([])
+     }
+ 
+     const handleKeyDown = (event: KeyboardEvent) => {
+       if (event.key === 'Escape') {
+         event.preventDefault()
+-        stopCaptureAndRestoreOverwrites()
++        stopCaptureAndRestoreSnapshot()
+         return
+       }
+ 
+@@ -500,8 +506,10 @@ export function HotkeyEditor() {
+ 
+       if (getHotkeyPrimaryTokenFromEventData(event)) {
+         setDraftBinding(nextBinding)
++        setStagedConflictKeys([])
+       } else {
+         setDraftBinding('')
++        setStagedConflictKeys([])
+       }
+     }
+ 
+@@ -512,7 +520,7 @@ export function HotkeyEditor() {
+   }, [captureKey])
+ 
+   useEffect(() => {
+-    const snapshotRef = partialConflictOverrideSnapshotRef
++    const snapshotRef = captureOverrideSnapshotRef
+ 
+     return () => {
+       const snapshot = snapshotRef.current
+@@ -526,6 +534,9 @@ export function HotkeyEditor() {
+ 
+   const startCapture = (key: HotkeyKey) => {
+     stopCapture()
++    captureOverrideSnapshotRef.current = {
++      ...useSettingsStore.getState().hotkeyOverrides,
++    }
+     setSelectedKey(key)
+     setCaptureKey(key)
+   }
+@@ -593,8 +604,12 @@ export function HotkeyEditor() {
+       return
+     }
+ 
++    captureOverrideSnapshotRef.current = null
++    for (const conflictKey of stagedConflictKeys) {
++      unbindHotkeyBinding(conflictKey)
++    }
+     setHotkeyBinding(captureKey, normalizeHotkeyBinding(draftBinding))
+-    stopCapture({ restorePartialOverwrites: false })
++    stopCapture({ restoreSnapshot: false })
+   }
+ 
+   const overwriteConflictingHotkey = (conflictKey: HotkeyKey) => {
+@@ -602,19 +617,11 @@ export function HotkeyEditor() {
+       return
+     }
+ 
+-    if (!partialConflictOverrideSnapshotRef.current) {
+-      partialConflictOverrideSnapshotRef.current = {
+-        ...useSettingsStore.getState().hotkeyOverrides,
+-      }
+-    }
+-
+-    const remainingConflicts = captureConflicts.filter((key) => key !== conflictKey)
+-    unbindHotkeyBinding(conflictKey)
+-
+-    if (remainingConflicts.length === 0) {
+-      setHotkeyBinding(captureKey, normalizeHotkeyBinding(draftBinding))
+-      stopCapture({ restorePartialOverwrites: false })
+-    }
++    setStagedConflictKeys((currentConflictKeys) =>
++      currentConflictKeys.includes(conflictKey)
++        ? currentConflictKeys
++        : [...currentConflictKeys, conflictKey],
++    )
+   }
+ 
+   const overwriteAllConflictingHotkeys = () => {
+@@ -622,26 +629,22 @@ export function HotkeyEditor() {
+       return
+     }
+ 
+-    for (const conflictKey of captureConflicts) {
+-      unbindHotkeyBinding(conflictKey)
+-    }
+-    setHotkeyBinding(captureKey, normalizeHotkeyBinding(draftBinding))
+-    stopCapture({ restorePartialOverwrites: false })
++    setStagedConflictKeys(captureConflicts)
+   }
+ 
+   const unbindSelectedHotkey = () => {
+     unbindHotkeyBinding(selectedKey)
+-    stopCapture({ restorePartialOverwrites: false })
++    stopCapture({ restoreSnapshot: false })
+   }
+ 
+   const resetSelectedHotkey = () => {
+     resetHotkeyBinding(selectedKey)
+-    stopCapture({ restorePartialOverwrites: false })
++    stopCapture({ restoreSnapshot: false })
+   }
+ 
+   const confirmResetAllHotkeys = () => {
+     resetHotkeys()
+-    stopCapture({ restorePartialOverwrites: false })
++    stopCapture({ restoreSnapshot: false })
+     toast.success(t('projects.settings.hotkeys.resetAllToast'))
+   }
+ 
+@@ -696,7 +699,7 @@ export function HotkeyEditor() {
+       const importResult = parseHotkeyImportDocument(JSON.parse(contents))
+ 
+       replaceHotkeyOverrides(importResult.overrides)
+-      stopCapture({ restorePartialOverwrites: false })
++      stopCapture({ restoreSnapshot: false })
+ 
+       const messages = [
+         t('projects.settings.hotkeys.importedCommands', {
+@@ -1035,13 +1038,13 @@ export function HotkeyEditor() {
+                 <p className="mt-1 text-xs leading-4 text-foreground/88">
+                   {t('projects.settings.hotkeys.listeningHint')}
+                 </p>
+-                {captureConflicts.length > 0 ? (
++                {unresolvedCaptureConflicts.length > 0 ? (
+                   <div className="mt-3 space-y-2 rounded-md border border-destructive/25 bg-destructive/8 p-2">
+                     <div className="flex items-center gap-1.5 text-xs font-medium text-destructive">
+                       <AlertTriangle className="h-3.5 w-3.5" />
+                       {t('projects.settings.hotkeys.conflictDetected')}
+                     </div>
+-                    {captureConflicts.map((key) => {
++                    {unresolvedCaptureConflicts.map((key) => {
+                       const hotkeyItem = HOTKEY_ITEM_BY_KEY[key]
+ 
+                       return (
+@@ -1065,7 +1068,7 @@ export function HotkeyEditor() {
+                         </div>
+                       )
+                     })}
+-                    {captureConflicts.length > 1 ? (
++                    {unresolvedCaptureConflicts.length > 1 ? (
+                       <Button
+                         size="sm"
+                         variant="destructive"

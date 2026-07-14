@@ -1,0 +1,591 @@
+diff --git a/packages/document/.storybook/preview.tsx b/packages/document/.storybook/preview.tsx
+index 10352769..8da4d4e3 100644
+--- a/packages/document/.storybook/preview.tsx
++++ b/packages/document/.storybook/preview.tsx
+@@ -6,7 +6,7 @@ import {
+   Subtitle,
+   Title,
+ } from "@storybook/addon-docs/blocks"
+-import type { Decorator, Parameters, Preview } from "@storybook/react-vite"
++import type { Parameters, Preview } from "@storybook/react-vite"
+ import React from "react"
+ import { worker } from "../mocks/browser"
+ 
+diff --git a/packages/react-components/package.json b/packages/react-components/package.json
+index 38be4778..9d126e66 100644
+--- a/packages/react-components/package.json
++++ b/packages/react-components/package.json
+@@ -58,7 +58,7 @@
+     "@adyen/adyen-web": "^6.28.0",
+     "@commercelayer/core": "workspace:*",
+     "@commercelayer/hooks": "workspace:*",
+-    "@commercelayer/organization-config": "^2.4.0",
++    "@commercelayer/organization-config": "^2.8.4",
+     "@commercelayer/sdk": "^7.4.1",
+     "@stripe/react-stripe-js": "^5.4.1",
+     "@stripe/stripe-js": "^8.6.1",
+diff --git a/packages/react-components/src/components/customers/MyIdentityLink.tsx b/packages/react-components/src/components/customers/MyIdentityLink.tsx
+index 3b4e0312..bd79f80e 100644
+--- a/packages/react-components/src/components/customers/MyIdentityLink.tsx
++++ b/packages/react-components/src/components/customers/MyIdentityLink.tsx
+@@ -1,19 +1,19 @@
+-import { useContext, useEffect, useState, type JSX } from 'react';
+-import Parent from '../utils/Parent'
+-import type { ChildrenFunction } from '#typings/index'
+-import CommerceLayerContext from '#context/CommerceLayerContext'
+-import { getApplicationLink } from '#utils/getApplicationLink'
+-import { getDomain } from '#utils/getDomain'
+-import { getOrganizationConfig } from '#utils/organization'
++import { type JSX, useContext, useEffect, useState } from "react"
++import CommerceLayerContext from "#context/CommerceLayerContext"
++import type { ChildrenFunction } from "#typings/index"
++import { getApplicationLink } from "#utils/getApplicationLink"
++import { getDomain } from "#utils/getDomain"
++import { getOrganizationConfig } from "#utils/organization"
++import Parent from "../utils/Parent"
+ 
+-interface ChildrenProps extends Omit<Props, 'children'> {
++interface ChildrenProps extends Omit<Props, "children"> {
+   /**
+    * The link href
+    */
+   href: string
+ }
+ 
+-interface Props extends Omit<JSX.IntrinsicElements['a'], 'children'> {
++interface Props extends Omit<JSX.IntrinsicElements["a"], "children"> {
+   /**
+    * A render function to render your own custom component
+    */
+@@ -25,7 +25,7 @@ interface Props extends Omit<JSX.IntrinsicElements['a'], 'children'> {
+   /**
+    * The type of the link
+    */
+-  type: 'login' | 'signup'
++  type: "login" | "signup"
+   /**
+    * The client id of the Commerce Layer application
+    */
+@@ -78,17 +78,20 @@ export function MyIdentityLink(props: Props): JSX.Element {
+   const { accessToken, endpoint } = useContext(CommerceLayerContext)
+   const [href, setHref] = useState<string | undefined>(undefined)
+   if (accessToken == null || endpoint == null)
+-    throw new Error('Cannot use `MyIdentityLink` outside of `CommerceLayer`')
+-  const { domain, slug } = getDomain(endpoint)
++    throw new Error("Cannot use `MyIdentityLink` outside of `CommerceLayer`")
+   useEffect(() => {
+     if (accessToken && endpoint) {
++      const { domain, slug } = getDomain(endpoint)
+       getOrganizationConfig({
+         accessToken,
+         endpoint,
+         params: {
+           accessToken,
+-          slug
+-        }
++          slug,          identityType: type,
++          clientId,
++          scope,
++          returnUrl: returnUrl ?? window.location.href,
++          resetPasswordUrl,        },
+       }).then((config) => {
+         if (config?.links?.identity) {
+           setHref(config.links.identity)
+@@ -96,14 +99,14 @@ export function MyIdentityLink(props: Props): JSX.Element {
+           const link = getApplicationLink({
+             slug,
+             accessToken,
+-            applicationType: 'identity',
++            applicationType: "identity",
+             domain,
+             modeType: type,
+             clientId,
+             scope,
+             returnUrl: returnUrl ?? window.location.href,
+             resetPasswordUrl,
+-            customDomain
++            customDomain,
+           })
+           setHref(link)
+         }
+@@ -112,14 +115,14 @@ export function MyIdentityLink(props: Props): JSX.Element {
+     return () => {
+       setHref(undefined)
+     }
+-  }, [accessToken, endpoint])
++  }, [accessToken, endpoint, type, clientId, scope, returnUrl, resetPasswordUrl, customDomain])
+ 
+   const parentProps = {
+     label,
+     href,
+     clientId,
+     scope,
+-    ...p
++    ...p,
+   }
+   return children ? (
+     <Parent {...parentProps}>{children}</Parent>
+diff --git a/packages/react-components/src/components/orders/AddToCartButton.tsx b/packages/react-components/src/components/orders/AddToCartButton.tsx
+index 4ffce784..2a8b7372 100644
+--- a/packages/react-components/src/components/orders/AddToCartButton.tsx
++++ b/packages/react-components/src/components/orders/AddToCartButton.tsx
+@@ -220,6 +220,8 @@ export function AddToCartButton(props: Props): JSX.Element {
+               orderId,
+               accessToken,
+               slug,
++              skuListId,
++              skuId: sku?.id,
+             },
+           })
+           location.href =
+diff --git a/packages/react-components/src/components/orders/HostedCart.tsx b/packages/react-components/src/components/orders/HostedCart.tsx
+index 0511bff4..9ebe2549 100644
+--- a/packages/react-components/src/components/orders/HostedCart.tsx
++++ b/packages/react-components/src/components/orders/HostedCart.tsx
+@@ -1,26 +1,33 @@
+-import CommerceLayerContext from '#context/CommerceLayerContext'
+-import OrderContext from '#context/OrderContext'
+-import OrderStorageContext from '#context/OrderStorageContext'
+-import { getApplicationLink } from '#utils/getApplicationLink'
+-import { getDomain } from '#utils/getDomain'
+-import useCustomContext from '#utils/hooks/useCustomContext'
+-import { type CSSProperties, useContext, useEffect, useState, useRef, type JSX } from 'react';
+-import { iframeResizer } from 'iframe-resizer'
+-import type { Order } from '@commercelayer/sdk'
+-import { subscribe, unsubscribe } from '#utils/events'
+-import { getOrganizationConfig } from '#utils/organization'
++import type { Order } from "@commercelayer/sdk"
++import { iframeResizer } from "iframe-resizer"
++import {
++  type CSSProperties,
++  type JSX,
++  useContext,
++  useEffect,
++  useRef,
++  useState,
++} from "react"
++import CommerceLayerContext from "#context/CommerceLayerContext"
++import OrderContext from "#context/OrderContext"
++import OrderStorageContext from "#context/OrderStorageContext"
++import { subscribe, unsubscribe } from "#utils/events"
++import { getApplicationLink } from "#utils/getApplicationLink"
++import { getDomain } from "#utils/getDomain"
++import useCustomContext from "#utils/hooks/useCustomContext"
++import { getOrganizationConfig } from "#utils/organization"
+ 
+ interface IframeData {
+   message:
+     | {
+-        type: 'update'
++        type: "update"
+         payload?: Order
+       }
+     | {
+-        type: 'close'
++        type: "close"
+       }
+     | {
+-        type: 'blur'
++        type: "blur"
+       }
+ }
+ 
+@@ -33,50 +40,50 @@ interface Styles {
+ }
+ 
+ const defaultIframeStyle = {
+-  width: '1px',
+-  minWidth: '100%',
+-  minHeight: '100%',
+-  border: 'none',
+-  paddingLeft: '20px',
+-  paddingRight: '20px'
++  width: "1px",
++  minWidth: "100%",
++  minHeight: "100%",
++  border: "none",
++  paddingLeft: "20px",
++  paddingRight: "20px",
+ } satisfies CSSProperties
+ 
+ const defaultContainerStyle = {
+-  position: 'fixed',
+-  top: '0',
+-  right: '-25rem',
+-  height: '100%',
+-  width: '23rem',
+-  transition: 'right 0.5s ease-in-out',
++  position: "fixed",
++  top: "0",
++  right: "-25rem",
++  height: "100%",
++  width: "23rem",
++  transition: "right 0.5s ease-in-out",
+   // zIndex: '0',
+-  pointerEvents: 'none',
+-  overflow: 'auto'
++  pointerEvents: "none",
++  overflow: "auto",
+ } satisfies CSSProperties
+ 
+ const defaultBackgroundStyle = {
+-  opacity: '0',
+-  position: 'fixed',
+-  top: '0',
+-  left: '0',
+-  height: '100%',
+-  width: '100vw',
+-  transition: 'opacity 0.5s ease-in-out',
++  opacity: "0",
++  position: "fixed",
++  top: "0",
++  left: "0",
++  height: "100%",
++  width: "100vw",
++  transition: "opacity 0.5s ease-in-out",
+   // zIndex: '-10',
+-  pointerEvents: 'none',
+-  backgroundColor: 'black'
++  pointerEvents: "none",
++  backgroundColor: "black",
+ } satisfies CSSProperties
+ 
+ const defaultIconStyle = {
+-  width: '1.25rem',
+-  height: '1.25rem'
++  width: "1.25rem",
++  height: "1.25rem",
+ } satisfies CSSProperties
+ 
+ const defaultIconContainer = {
+-  textAlign: 'left',
+-  paddingLeft: '20px',
+-  paddingTop: '20px',
+-  background: '#ffffff',
+-  color: '#686E6E'
++  textAlign: "left",
++  paddingLeft: "20px",
++  paddingTop: "20px",
++  background: "#ffffff",
++  color: "#686E6E",
+ } satisfies CSSProperties
+ 
+ const defaultStyle = {
+@@ -84,11 +91,11 @@ const defaultStyle = {
+   container: defaultContainerStyle,
+   background: defaultBackgroundStyle,
+   icon: defaultIconStyle,
+-  iconContainer: defaultIconContainer
++  iconContainer: defaultIconContainer,
+ } satisfies Styles
+ 
+ interface Props
+-  extends Omit<JSX.IntrinsicElements['div'], 'children' | 'style'> {
++  extends Omit<JSX.IntrinsicElements["div"], "children" | "style"> {
+   /**
+    * The style of the cart.
+    */
+@@ -100,7 +107,7 @@ interface Props
+   /**
+    * The type of the cart. Defaults to undefined.
+    */
+-  type?: 'mini'
++  type?: "mini"
+   /**
+    * If true, the cart will open when a line item is added to the order clicking the add to cart button. Defaults to false.
+    * Works only with the `type` prop set to `mini`.
+@@ -148,11 +155,12 @@ export function HostedCart({
+ }: Props): JSX.Element | null {
+   const [isOpen, setOpen] = useState(false)
+   const ref = useRef<HTMLIFrameElement>(null)
++  const loadedOrderIdRef = useRef<string | null>(null)
+   const { accessToken, endpoint } = useCustomContext({
+     context: CommerceLayerContext,
+-    contextComponentName: 'CommerceLayer',
+-    currentComponentName: 'HostedCart',
+-    key: 'accessToken'
++    contextComponentName: "CommerceLayer",
++    currentComponentName: "HostedCart",
++    key: "accessToken",
+   })
+   const [src, setSrc] = useState<string | undefined>()
+   if (accessToken == null || endpoint == null) return null
+@@ -166,11 +174,12 @@ export function HostedCart({
+         accessToken,
+         endpoint,
+         params: {
+-          orderId: order?.id,
++          orderId: order?.id ?? orderId,
+           accessToken,
+-          slug
+-        }
++          slug,
++        },
+       })
++      loadedOrderIdRef.current = orderId
+       setSrc(
+         config?.links?.cart ??
+           getApplicationLink({
+@@ -178,9 +187,9 @@ export function HostedCart({
+             orderId,
+             accessToken,
+             domain,
+-            applicationType: 'cart',
+-            customDomain
+-          })
++            applicationType: "cart",
++            customDomain,
++          }),
+       )
+       if (openCart) {
+         setTimeout(() => {
+@@ -192,35 +201,35 @@ export function HostedCart({
+   }
+   function onMessage(data: IframeData): void {
+     switch (data.message.type) {
+-      case 'update':
++      case "update":
+         if (data.message.payload != null) {
+           getOrder(data.message.payload.id)
+         }
+         break
+-      case 'close':
+-        if (type === 'mini') {
++      case "close":
++        if (type === "mini") {
+           if (handleOpen != null) handleOpen()
+           else setOpen(false)
+         }
+         break
+ 
+-      case 'blur':
+-        if (type === 'mini' && isOpen) {
++      case "blur":
++        if (type === "mini" && isOpen) {
+           ref.current?.focus()
+         }
+         break
+     }
+   }
+   useEffect(() => {
+-    const orderId = localStorage.getItem(persistKey)
++    const resolvedOrderId = order?.id ?? localStorage.getItem(persistKey)
+     let ignore = false
+     if (open != null && open !== isOpen) {
+       setOpen(open)
+     }
+-    if (openAdd && type === 'mini') {
+-      subscribe('open-cart', () => {
+-        window.document.body.style.overflow = 'hidden'
+-        if (src == null && order?.id == null && orderId == null) {
++    if (openAdd && type === "mini") {
++      subscribe("open-cart", () => {
++        window.document.body.style.overflow = "hidden"
++        if (src == null && resolvedOrderId == null) {
+           setOrder(true)
+         } else {
+           if (src != null && ref.current != null) {
+@@ -235,36 +244,36 @@ export function HostedCart({
+     }
+     if (
+       src == null &&
+-      order?.id == null &&
+-      orderId == null &&
++      resolvedOrderId == null &&
+       accessToken != null &&
+       !ignore &&
+       isOpen
+     ) {
+       setOrder()
+     } else if (
+-      src == null &&
+-      (order?.id != null || orderId != null) &&
+-      accessToken
++      resolvedOrderId != null &&
++      accessToken &&
++      (src == null || loadedOrderIdRef.current !== resolvedOrderId)
+     ) {
+       getOrganizationConfig({
+         accessToken,
+         endpoint,
+         params: {
+-          orderId: order?.id,
++          orderId: resolvedOrderId,
+           accessToken,
+-          slug
+-        }
++          slug,
++        },
+       }).then((config) => {
++        loadedOrderIdRef.current = resolvedOrderId
+         setSrc(
+           config?.links?.cart ??
+             getApplicationLink({
+               slug,
+-              orderId: order?.id ?? orderId ?? '',
++              orderId: resolvedOrderId,
+               accessToken,
+               domain,
+-              applicationType: 'cart'
+-            })
++              applicationType: "cart",
++            }),
+         )
+       })
+     }
+@@ -273,42 +282,41 @@ export function HostedCart({
+     }
+     return (): void => {
+       ignore = true
+-      if (openAdd && type === 'mini') {
+-        // biome-ignore lint/suspicious/noEmptyBlockStatements: <explanation>
+-        unsubscribe('open-cart', () => {})
++      if (openAdd && type === "mini") {
++        unsubscribe("open-cart", () => {})
+       }
+     }
+-  }, [src, open, order?.id, accessToken])
++  }, [src, open, order?.id, accessToken, persistKey])
+   useEffect(() => {
+     if (ref.current == null) return
+     iframeResizer(
+       {
+         checkOrigin: false,
+         // @ts-expect-error No types available
+-        onMessage
++        onMessage,
+       },
+-      ref.current
++      ref.current,
+     )
+   }, [ref.current != null])
+   /**
+    * Close the cart.
+    */
+   function onCloseCart(): void {
+-    window.document.body.style.removeProperty('overflow')
++    window.document.body.style.removeProperty("overflow")
+     if (handleOpen != null) handleOpen()
+     else setOpen(false)
+   }
+-  return src == null ? null : type === 'mini' ? (
++  return src == null ? null : type === "mini" ? (
+     <>
+       <div
+-        aria-hidden='true'
++        aria-hidden="true"
+         style={{
+           ...defaultStyle.background,
+           ...style?.background,
+-          opacity: isOpen ? '0.5' : defaultStyle.background?.opacity,
++          opacity: isOpen ? "0.5" : defaultStyle.background?.opacity,
+           pointerEvents: isOpen
+-            ? 'initial'
+-            : defaultStyle.background?.pointerEvents
++            ? "initial"
++            : defaultStyle.background?.pointerEvents,
+         }}
+         onClick={onCloseCart}
+       />
+@@ -316,48 +324,48 @@ export function HostedCart({
+         style={{
+           ...defaultStyle.container,
+           ...style?.container,
+-          right: isOpen ? '0' : defaultStyle.container?.right,
++          right: isOpen ? "0" : defaultStyle.container?.right,
+           pointerEvents: isOpen
+-            ? 'initial'
+-            : defaultStyle.container?.pointerEvents
++            ? "initial"
++            : defaultStyle.container?.pointerEvents,
+         }}
+         {...props}
+       >
+         <div style={{ ...defaultStyle.iconContainer, ...style?.iconContainer }}>
+           <svg
+-            xmlns='http://www.w3.org/2000/svg'
+-            fill='none'
+-            viewBox='0 0 24 24'
++            xmlns="http://www.w3.org/2000/svg"
++            fill="none"
++            viewBox="0 0 24 24"
+             strokeWidth={1.5}
+-            stroke='currentColor'
++            stroke="currentColor"
+             style={{ ...defaultStyle.icon, ...style?.icon }}
+             onClick={onCloseCart}
+           >
+             <path
+-              strokeLinecap='round'
+-              strokeLinejoin='round'
+-              d='M6 18L18 6M6 6l12 12'
++              strokeLinecap="round"
++              strokeLinejoin="round"
++              d="M6 18L18 6M6 6l12 12"
+             />
+           </svg>
+         </div>
+         <iframe
+-          title='Cart'
++          title="Cart"
+           ref={ref}
+           style={{ ...defaultStyle.cart, ...style?.cart }}
+           src={src}
+-          width='100%'
+-          height='100%'
++          width="100%"
++          height="100%"
+         />
+       </div>
+     </>
+   ) : (
+     <iframe
+-      title='Cart'
++      title="Cart"
+       ref={ref}
+       style={{ ...defaultStyle.cart, ...style?.cart }}
+       src={src}
+-      width='100%'
+-      height='100%'
++      width="100%"
++      height="100%"
+     />
+   )
+ }
+diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml
+index 228e1f60..58d06c3a 100644
+--- a/pnpm-lock.yaml
++++ b/pnpm-lock.yaml
+@@ -333,8 +333,8 @@ importers:
+         specifier: workspace:*
+         version: link:../hooks
+       '@commercelayer/organization-config':
+-        specifier: ^2.4.0
+-        version: 2.5.1
++        specifier: ^2.8.4
++        version: 2.8.4
+       '@commercelayer/sdk':
+         specifier: ^7.4.1
+         version: 7.4.1
+@@ -1183,8 +1183,8 @@ packages:
+     resolution: {integrity: sha512-o4HkMHqXqhPJ3gOA/61Na9T0ssLluV/SQEPtnb/N9/WpbiemEW43M1h/Iuc0/H8fSThqWe3Crt5HwGT5qAz6vQ==}
+     engines: {node: '>=20.0.0'}
+ 
+-  '@commercelayer/organization-config@2.5.1':
+-    resolution: {integrity: sha512-+SPXWsucnnyBIfgSwg4h3RoNOO/5r+x+c3nRVdJjg5quh3gyYiGjyMj0cyeNmYM7IeexcXmcNjTkkdCT1B3V5Q==}
++  '@commercelayer/organization-config@2.8.4':
++    resolution: {integrity: sha512-ZlgIhQx7vu89ZD3eOCSkCe7kNb5LgEGy0p4Gayi75sxfHfJRXKkoX2NC+nkp2pFosi4SBYhlQFcd/EtzStAQGw==}
+     engines: {node: '>=18', pnpm: '>=7'}
+ 
+   '@commercelayer/sdk@7.4.1':
+@@ -7511,8 +7511,9 @@ snapshots:
+ 
+   '@commercelayer/js-auth@7.3.0': {}
+ 
+-  '@commercelayer/organization-config@2.5.1':
++  '@commercelayer/organization-config@2.8.4':
+     dependencies:
++      '@commercelayer/js-auth': 7.3.0
+       merge-anything: 5.1.7
+ 
+   '@commercelayer/sdk@7.4.1': {}

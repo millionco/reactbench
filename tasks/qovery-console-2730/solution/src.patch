@@ -1,0 +1,522 @@
+diff --git a/libs/shared/ui/src/lib/components/date-picker/date-picker-calendar/date-picker-calendar.tsx b/libs/shared/ui/src/lib/components/date-picker/date-picker-calendar/date-picker-calendar.tsx
+index 8e1356b2b1c..7b3a8b46e00 100644
+--- a/libs/shared/ui/src/lib/components/date-picker/date-picker-calendar/date-picker-calendar.tsx
++++ b/libs/shared/ui/src/lib/components/date-picker/date-picker-calendar/date-picker-calendar.tsx
+@@ -2,8 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
+ import DatePickerLib, { type ReactDatePickerCustomHeaderProps } from 'react-datepicker'
+ import 'react-datepicker/dist/react-datepicker.css'
+ import Button from '../../button/button'
+-import Icon from '../../icon/icon'
+-import InputTextSmall from '../../inputs/input-text-small/input-text-small'
+ import DatePickerHeader from '../date-picker-header/date-picker-header'
+ import { type DatePickerCalendarProps } from '../date-picker.types'
+ import {
+@@ -14,6 +12,11 @@ import {
+   validateDate,
+   validateTime,
+ } from '../date-picker.utils'
++import { areSameDates, getDateRangeKey, getTimeInputValue, mergeDateWithTimeText } from './date-picker-calendar.utils'
++import DatePickerDateTimeInputs, { type DateTimeInputType } from './date-picker-date-time-inputs'
++import DatePickerTimezoneSelect from './date-picker-timezone-select'
++
++type TimezoneOption = { label: string; value: 'local' | 'utc' }
+
+ export function DatePickerCalendar({
+   onChange,
+@@ -46,13 +49,15 @@ export function DatePickerCalendar({
+       return 'Local'
+     }
+   }, [])
+-  const timezoneOptions = [
++  const timezoneOptions: TimezoneOption[] = [
+     { label: localTimeZone ? `Browser time (${localTimeZone})` : 'Browser time', value: 'local' },
+     { label: 'UTC', value: 'utc' },
+   ]
+   const selectedTimezoneLabel =
+     timezoneOptions.find((option) => option.value === (useLocalTime ? 'local' : 'utc'))?.label ?? ''
+
++  const defaultDatesKey = getDateRangeKey(defaultDates)
++  const previousDefaultDatesKeyRef = useRef(defaultDatesKey)
+   const lastInteractionRef = useRef<'calendar' | 'input' | 'default'>('default')
+   const previousUseLocalTimeRef = useRef(useLocalTime)
+
+@@ -69,25 +74,51 @@ export function DatePickerCalendar({
+     setStartDateText(formatDateInput(startDate, useLocalTime))
+     setEndDateText(formatDateInput(endDate, useLocalTime))
+
+-    if (useLocalTime) {
+-      setStartTimeText(startDate.toTimeString().substring(0, 5))
+-      setEndTimeText(endDate.toTimeString().substring(0, 5))
+-    } else {
+-      setStartTimeText(startDate.toISOString().substring(11, 16))
+-      setEndTimeText(endDate.toISOString().substring(11, 16))
+-    }
++    setStartTimeText(getTimeInputValue(startDate, useLocalTime))
++    setEndTimeText(getTimeInputValue(endDate, useLocalTime))
+   }, [endDate, startDate, useLocalTime])
+
+   const handleChange = (dates: [Date | null, Date | null] | null) => {
+     if (!dates) {
+-      setStartDate(null)
+-      setEndDate(null)
++      if (startDate) {
++        setStartDate(null)
++      }
++      if (endDate) {
++        setEndDate(null)
++      }
+       return
+     }
+
+-    const [start, end] = dates
++    const [selectedStart, selectedEnd] = dates
++    const start = mergeDateWithTimeText({
++      date: selectedStart,
++      timeText: startTimeText,
++      useLocalTime,
++    })
++    const end = mergeDateWithTimeText({
++      date: selectedEnd,
++      timeText: endTimeText,
++      useLocalTime,
++    })
++    const updateRange = (nextStartDate: Date | null, nextEndDate: Date | null) => {
++      const hasStartDateChanged = !areSameDates(startDate, nextStartDate)
++      const hasEndDateChanged = !areSameDates(endDate, nextEndDate)
++
++      if (!hasStartDateChanged && !hasEndDateChanged) return false
++
++      lastInteractionRef.current = 'calendar'
++
++      if (hasStartDateChanged) {
++        setStartDate(nextStartDate)
++      }
++      if (hasEndDateChanged) {
++        setEndDate(nextEndDate)
++      }
++
++      return true
++    }
++
+     lastInteractionRef.current = 'calendar'
+-    onRangeSelection?.()
+
+     if (maxRangeInDays && start && end) {
+       const adjustedEndDateOnly = clampEndDateForMaxRange({ startDate: start, endDate: end, maxRangeInDays })
+@@ -100,18 +131,19 @@ export function DatePickerCalendar({
+           end.getMinutes(),
+           end.getSeconds()
+         )
+-        setStartDate(start)
+-        setEndDate(adjustedEndDate)
++        const didUpdateRange = updateRange(start, adjustedEndDate)
+         setStartDateText(formatDateInput(start, useLocalTime))
+         setEndDateText(formatDateInput(adjustedEndDate, useLocalTime))
+         setStartDateError('')
+         setEndDateError('')
++        if (didUpdateRange) {
++          onRangeSelection?.()
++        }
+         return
+       }
+     }
+
+-    setStartDate(start)
+-    setEndDate(end)
++    const didUpdateRange = updateRange(start, end)
+
+     if (start) {
+       setStartDateText(formatDateInput(start, useLocalTime))
+@@ -124,15 +156,23 @@ export function DatePickerCalendar({
+       setEndDateText('')
+       setEndDateError('')
+     }
++
++    if (didUpdateRange) {
++      onRangeSelection?.()
++    }
+   }
+
+   useEffect(() => {
+-    if (defaultDates) {
+-      lastInteractionRef.current = 'default'
+-      setStartDate(defaultDates[0])
+-      setEndDate(defaultDates[1])
+-    }
+-  }, [defaultDates])
++    if (previousDefaultDatesKeyRef.current === defaultDatesKey) return
++
++    previousDefaultDatesKeyRef.current = defaultDatesKey
++    if (!defaultDates) return
++
++    const [nextStartDate, nextEndDate] = defaultDates
++    lastInteractionRef.current = 'default'
++    setStartDate(nextStartDate)
++    setEndDate(nextEndDate)
++  }, [defaultDates, defaultDatesKey])
+
+   const handleClickOutside = (event: React.MouseEvent<HTMLDivElement>) => {
+     const target = event.target as HTMLElement
+@@ -171,7 +211,7 @@ export function DatePickerCalendar({
+     return ''
+   }
+
+-  const handleInputChange = (type: 'startDate' | 'startTime' | 'endDate' | 'endTime', value: string) => {
++  const handleInputChange = (type: DateTimeInputType, value: string) => {
+     lastInteractionRef.current = 'input'
+     const nextStartDateText = type === 'startDate' ? value : startDateText
+     const nextStartTimeText = type === 'startTime' ? value : startTimeText
+@@ -209,19 +249,24 @@ export function DatePickerCalendar({
+     setEndDateError(endDateError)
+     setEndTimeError(endTimeError)
+
+-    let didUpdateRange = false
++    if (type === 'startTime' || type === 'endTime') return
+
+-    if (!startDateError && !startTimeError) {
+-      setStartDate(getCombinedDateTime(nextStartDateText, nextStartTimeText, useLocalTime))
+-      didUpdateRange = true
+-    }
++    if (type === 'startDate') {
++      if (startDateError || startTimeError) return
+
+-    if (!endDateError && !endTimeError) {
+-      setEndDate(getCombinedDateTime(nextEndDateText, nextEndTimeText, useLocalTime))
+-      didUpdateRange = true
++      const nextStartDate = getCombinedDateTime(nextStartDateText, nextStartTimeText, useLocalTime)
++      if (startDate?.getTime() !== nextStartDate.getTime()) {
++        setStartDate(nextStartDate)
++        onRangeSelection?.()
++      }
++      return
+     }
+
+-    if (didUpdateRange) {
++    if (endDateError || endTimeError) return
++
++    const nextEndDate = getCombinedDateTime(nextEndDateText, nextEndTimeText, useLocalTime)
++    if (endDate?.getTime() !== nextEndDate.getTime()) {
++      setEndDate(nextEndDate)
+       onRangeSelection?.()
+     }
+   }
+@@ -308,60 +353,17 @@ export function DatePickerCalendar({
+       />
+       <div className="border-t border-neutral px-4 py-3">
+         {showDateTimeInputs && (
+-          <div className="space-y-3">
+-            <div>
+-              <div className="mb-1 flex items-center justify-between">
+-                <p className="text-sm text-neutral">Start</p>
+-                {(startDateError || startTimeError) && (
+-                  <span className="text-xs text-negative">{startDateError || startTimeError}</span>
+-                )}
+-              </div>
+-              <div className="flex gap-2">
+-                <InputTextSmall
+-                  label="Date"
+-                  name="start-date"
+-                  type="text"
+-                  className="flex-1"
+-                  value={startDateText}
+-                  onChange={(e) => handleInputChange('startDate', e.target.value)}
+-                />
+-                <InputTextSmall
+-                  label="Time"
+-                  name="start-time"
+-                  type="text"
+-                  className="w-20"
+-                  value={startTimeText}
+-                  onChange={(e) => handleInputChange('startTime', e.target.value)}
+-                />
+-              </div>
+-            </div>
+-            <div>
+-              <div className="mb-1 flex items-center justify-between">
+-                <p className="text-sm text-neutral">End</p>
+-                {(endDateError || endTimeError) && (
+-                  <span className="text-xs text-negative">{endDateError || endTimeError}</span>
+-                )}
+-              </div>
+-              <div className="flex gap-2">
+-                <InputTextSmall
+-                  label="Date"
+-                  name="end-date"
+-                  type="text"
+-                  className="flex-1"
+-                  value={endDateText}
+-                  onChange={(e) => handleInputChange('endDate', e.target.value)}
+-                />
+-                <InputTextSmall
+-                  label="Time"
+-                  name="end-time"
+-                  type="text"
+-                  className="w-20"
+-                  value={endTimeText}
+-                  onChange={(e) => handleInputChange('endTime', e.target.value)}
+-                />
+-              </div>
+-            </div>
+-          </div>
++          <DatePickerDateTimeInputs
++            startDateText={startDateText}
++            startTimeText={startTimeText}
++            endDateText={endDateText}
++            endTimeText={endTimeText}
++            startDateError={startDateError}
++            startTimeError={startTimeError}
++            endDateError={endDateError}
++            endTimeError={endTimeError}
++            onInputChange={handleInputChange}
++          />
+         )}
+         <Button
+           type="button"
+@@ -372,24 +374,12 @@ export function DatePickerCalendar({
+           Apply
+         </Button>
+         {showTimezoneSelect && (
+-          <div className="relative my-1 flex w-full items-center justify-center gap-1 text-xs font-medium  text-neutral-subtle transition-colors hover:text-neutral">
+-            <span>{selectedTimezoneLabel}</span>
+-            <Icon iconName="chevron-down" iconStyle="regular" className="pointer-events-none text-xs" />
+-            <select
+-              name="timezone"
+-              value={useLocalTime ? 'local' : 'utc'}
+-              className="absolute inset-0 h-full w-full cursor-pointer appearance-none opacity-0"
+-              onChange={(event) => {
+-                onTimezoneChange?.(event.target.value === 'local')
+-              }}
+-            >
+-              {timezoneOptions.map((option) => (
+-                <option key={option.value} value={option.value}>
+-                  {option.label}
+-                </option>
+-              ))}
+-            </select>
+-          </div>
++          <DatePickerTimezoneSelect
++            selectedTimezoneLabel={selectedTimezoneLabel}
++            timezoneValue={useLocalTime ? 'local' : 'utc'}
++            timezoneOptions={timezoneOptions}
++            onTimezoneChange={onTimezoneChange}
++          />
+         )}
+       </div>
+     </div>
+diff --git a/libs/shared/ui/src/lib/components/date-picker/date-picker-calendar/date-picker-calendar.utils.ts b/libs/shared/ui/src/lib/components/date-picker/date-picker-calendar/date-picker-calendar.utils.ts
+new file mode 100644
+index 00000000000..adb837caa58
+--- /dev/null
++++ b/libs/shared/ui/src/lib/components/date-picker/date-picker-calendar/date-picker-calendar.utils.ts
+@@ -0,0 +1,25 @@
++import { formatDateInput, getCombinedDateTime, validateTime } from '../date-picker.utils'
++
++export const areSameDates = (firstDate: Date | null, secondDate: Date | null) => {
++  if (!firstDate || !secondDate) return firstDate === secondDate
++  return firstDate.getTime() === secondDate.getTime()
++}
++
++export const getDateRangeKey = (dates?: [Date, Date]) => dates?.map((date) => date.getTime()).join('-') ?? ''
++
++export const getTimeInputValue = (date: Date, useLocalTime: boolean) =>
++  useLocalTime ? date.toTimeString().substring(0, 5) : date.toISOString().substring(11, 16)
++
++export const mergeDateWithTimeText = ({
++  date,
++  timeText,
++  useLocalTime,
++}: {
++  date: Date | null
++  timeText: string
++  useLocalTime: boolean
++}) => {
++  if (!date || !validateTime(timeText)) return date
++
++  return getCombinedDateTime(formatDateInput(date, useLocalTime), timeText, useLocalTime)
++}
+diff --git a/libs/shared/ui/src/lib/components/date-picker/date-picker-calendar/date-picker-date-time-inputs.tsx b/libs/shared/ui/src/lib/components/date-picker/date-picker-calendar/date-picker-date-time-inputs.tsx
+new file mode 100644
+index 00000000000..3e9ed43fca2
+--- /dev/null
++++ b/libs/shared/ui/src/lib/components/date-picker/date-picker-calendar/date-picker-date-time-inputs.tsx
+@@ -0,0 +1,107 @@
++import InputTextSmall from '../../inputs/input-text-small/input-text-small'
++
++export type DateTimeInputType = 'startDate' | 'startTime' | 'endDate' | 'endTime'
++
++interface DatePickerDateTimeInputsProps {
++  startDateText: string
++  startTimeText: string
++  endDateText: string
++  endTimeText: string
++  startDateError: string
++  startTimeError: string
++  endDateError: string
++  endTimeError: string
++  onInputChange: (type: DateTimeInputType, value: string) => void
++}
++
++const DateTimeInputGroup = ({
++  label,
++  dateName,
++  timeName,
++  dateType,
++  timeType,
++  dateValue,
++  timeValue,
++  dateError,
++  timeError,
++  onInputChange,
++}: {
++  label: string
++  dateName: string
++  timeName: string
++  dateType: DateTimeInputType
++  timeType: DateTimeInputType
++  dateValue: string
++  timeValue: string
++  dateError: string
++  timeError: string
++  onInputChange: (type: DateTimeInputType, value: string) => void
++}) => (
++  <div>
++    <div className="mb-1 flex items-center justify-between">
++      <p className="text-sm text-neutral">{label}</p>
++      {(dateError || timeError) && <span className="text-xs text-negative">{dateError || timeError}</span>}
++    </div>
++    <div className="flex gap-2">
++      <InputTextSmall
++        label="Date"
++        name={dateName}
++        type="text"
++        className="flex-1"
++        value={dateValue}
++        onChange={(event) => onInputChange(dateType, event.target.value)}
++      />
++      <InputTextSmall
++        label="Time"
++        name={timeName}
++        type="text"
++        className="w-20"
++        value={timeValue}
++        onChange={(event) => onInputChange(timeType, event.target.value)}
++      />
++    </div>
++  </div>
++)
++
++export function DatePickerDateTimeInputs({
++  startDateText,
++  startTimeText,
++  endDateText,
++  endTimeText,
++  startDateError,
++  startTimeError,
++  endDateError,
++  endTimeError,
++  onInputChange,
++}: DatePickerDateTimeInputsProps) {
++  return (
++    <div className="space-y-3">
++      <DateTimeInputGroup
++        label="Start"
++        dateName="start-date"
++        timeName="start-time"
++        dateType="startDate"
++        timeType="startTime"
++        dateValue={startDateText}
++        timeValue={startTimeText}
++        dateError={startDateError}
++        timeError={startTimeError}
++        onInputChange={onInputChange}
++      />
++      <DateTimeInputGroup
++        label="End"
++        dateName="end-date"
++        timeName="end-time"
++        dateType="endDate"
++        timeType="endTime"
++        dateValue={endDateText}
++        timeValue={endTimeText}
++        dateError={endDateError}
++        timeError={endTimeError}
++        onInputChange={onInputChange}
++      />
++    </div>
++  )
++}
++
++export default DatePickerDateTimeInputs
+diff --git a/libs/shared/ui/src/lib/components/date-picker/date-picker-calendar/date-picker-timezone-select.tsx b/libs/shared/ui/src/lib/components/date-picker/date-picker-calendar/date-picker-timezone-select.tsx
+new file mode 100644
+index 00000000000..f33d4a48b03
+--- /dev/null
++++ b/libs/shared/ui/src/lib/components/date-picker/date-picker-calendar/date-picker-timezone-select.tsx
+@@ -0,0 +1,39 @@
++import Icon from '../../icon/icon'
++
++interface DatePickerTimezoneSelectProps {
++  selectedTimezoneLabel: string
++  timezoneValue: 'local' | 'utc'
++  timezoneOptions: Array<{ label: string; value: 'local' | 'utc' }>
++  onTimezoneChange?: (useLocalTime: boolean) => void
++}
++
++export function DatePickerTimezoneSelect({
++  selectedTimezoneLabel,
++  timezoneValue,
++  timezoneOptions,
++  onTimezoneChange,
++}: DatePickerTimezoneSelectProps) {
++  return (
++    <div className="relative my-1 flex w-full items-center justify-center gap-1 text-xs font-medium  text-neutral-subtle transition-colors hover:text-neutral">
++      <span>{selectedTimezoneLabel}</span>
++      <Icon iconName="chevron-down" iconStyle="regular" className="pointer-events-none text-xs" />
++      <select
++        aria-label="Timezone"
++        name="timezone"
++        value={timezoneValue}
++        className="absolute inset-0 h-full w-full cursor-pointer appearance-none opacity-0"
++        onChange={(event) => {
++          onTimezoneChange?.(event.target.value === 'local')
++        }}
++      >
++        {timezoneOptions.map((option) => (
++          <option key={option.value} value={option.value}>
++            {option.label}
++          </option>
++        ))}
++      </select>
++    </div>
++  )
++}
++
++export default DatePickerTimezoneSelect
+diff --git a/libs/shared/ui/src/lib/components/date-picker/date-picker.tsx b/libs/shared/ui/src/lib/components/date-picker/date-picker.tsx
+index 642aa81d211..79ea9938c87 100644
+--- a/libs/shared/ui/src/lib/components/date-picker/date-picker.tsx
++++ b/libs/shared/ui/src/lib/components/date-picker/date-picker.tsx
+@@ -1,6 +1,7 @@
+ import { type PropsWithChildren, useEffect, useState } from 'react'
+ import { twMerge } from '@qovery/shared/util-js'
+ import DatePickerCalendar from './date-picker-calendar/date-picker-calendar'
++import { getDateRangeKey } from './date-picker-calendar/date-picker-calendar.utils'
+ import DatePickerPeriodList from './date-picker-period-list/date-picker-period-list'
+ import { type DatePickerProps } from './date-picker.types'
+ import { getPeriodDates } from './date-picker.utils'
+@@ -24,12 +25,13 @@ export function DatePicker({
+   const shouldShowCalendar = showCalendar !== false
+   const hasPanels = shouldShowCalendar || shouldShowPeriodList
+   const [periodDates, setPeriodDates] = useState<[Date, Date] | undefined>()
++  const defaultDatesKey = getDateRangeKey(defaultDates)
+
+   useEffect(() => {
+-    if (defaultDates) {
++    if (defaultDatesKey) {
+       setPeriodDates(undefined)
+     }
+-  }, [defaultDates])
++  }, [defaultDatesKey])
+
+   useEffect(() => {
+     if (!isOpen || shouldShowCalendar || !onClickOutside) return

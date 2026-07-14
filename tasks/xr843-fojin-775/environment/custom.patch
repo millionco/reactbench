@@ -1,0 +1,8 @@
+diff --git a/backend/data b/backend/data
+deleted file mode 120000
+index 249cda9..0000000
+--- a/backend/data
++++ /dev/null
+@@ -1 +0,0 @@
+-/data
+\ No newline at end of file

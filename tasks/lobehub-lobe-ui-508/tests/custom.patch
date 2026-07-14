@@ -1,0 +1,53 @@
+diff --git a/src/Accordion/Accordion.tsx b/src/Accordion/Accordion.tsx
+index 361e700c..4b0a2a4a 100644
+--- a/src/Accordion/Accordion.tsx
++++ b/src/Accordion/Accordion.tsx
+@@ -40,7 +40,7 @@ const Accordion = memo<AccordionProps>(
+     const allItemKeys = validChildren.map((child, index) => (child.props as any).itemKey || index);
+
+     // If defaultExpandedKeys or expandedKeys is undefined, expand all items by default
+-    const initialExpandedKeys = defaultExpandedKeys ?? allItemKeys;
++    const initialExpandedKeys = defaultExpandedKeys ?? allItemKeys.slice(0, 1);
+
+     const [expandedKeys, setExpandedKeys] = useMergeState<Key[]>(initialExpandedKeys, {
+       onChange: onExpandedChange,
+diff --git a/src/Accordion/context.tsx b/src/Accordion/context.tsx
+index b5fdeeec..c7816171 100644
+--- a/src/Accordion/context.tsx
++++ b/src/Accordion/context.tsx
+@@ -50,6 +50,8 @@ export const AccordionItemStateProvider = memo<AccordionItemStateProviderProps>(
+     );
+     return <AccordionItemStateContext value={value}>{children}</AccordionItemStateContext>;
+   },
++  (prevProps, nextProps) =>
++    prevProps.itemKey === nextProps.itemKey && prevProps.onToggleKey === nextProps.onToggleKey,
+ );
+
+ AccordionItemStateProvider.displayName = 'AccordionItemStateProvider';
+diff --git a/vitest.config.ts b/vitest.config.ts
+index 1dfc9db9..faf57212 100644
+--- a/vitest.config.ts
++++ b/vitest.config.ts
+@@ -1,13 +1,19 @@
++import { fileURLToPath } from 'node:url';
++
+ import { defineConfig } from 'vitest/config';
+
+ import { name } from './package.json';
+
++const srcPath = fileURLToPath(new URL('./src', import.meta.url));
++
+ export default defineConfig({
+-  test: {
++  resolve: {
+     alias: {
+-      '@': './src',
+-      [name]: './src',
++      '@': srcPath,
++      [name]: srcPath,
+     },
++  },
++  test: {
+     environment: 'jsdom',
+     globals: true,
+   },

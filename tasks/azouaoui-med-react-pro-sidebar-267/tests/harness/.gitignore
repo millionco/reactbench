@@ -1,0 +1,10 @@
+node_modules/
+.pnpm-store/
+.vite/
+.vite-cache/
+.coverage-v8/
+coverage/
+coverage-report/
+test-results/
+playwright-report/
+dist/

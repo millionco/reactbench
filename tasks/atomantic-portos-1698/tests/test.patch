@@ -1,0 +1,345 @@
+diff --git a/client/src/components/pipeline/editorial/EditorialFindingsTriage.test.jsx b/client/src/components/pipeline/editorial/EditorialFindingsTriage.test.jsx
+index 42476f96..83c3e258 100644
+--- a/client/src/components/pipeline/editorial/EditorialFindingsTriage.test.jsx
++++ b/client/src/components/pipeline/editorial/EditorialFindingsTriage.test.jsx
+@@ -273,6 +273,30 @@ describe('EditorialFindingsTriage', () => {
+     expect(screen.queryByText('Sagging middle')).toBeNull();
+   });
+
++  // ---- Category filter (#1606) — a comment-level facet distinct from scope. ----
++  const categoryComments = () => [
++    { id: 'n1', checkId: 'naming.dissimilar-names', category: 'naming', status: 'open', severity: 'high', issueNumber: 1, problem: 'Confusable names' },
++    { id: 'p1', checkId: 'pacing.scene-drag', category: 'pacing', status: 'open', severity: 'low', issueNumber: 2, problem: 'Sagging middle' },
++  ];
++  const renderCategory = (initialEntries = ['/']) => render(
++    <MemoryRouter initialEntries={initialEntries}>
++      <EditorialFindingsTriage seriesId="ser-1" checksById={twoCheckChecks} comments={categoryComments()} />
++    </MemoryRouter>,
++  );
++
++  it('filters by finding category via the Category select (#1606)', () => {
++    renderCategory();
++    fireEvent.change(screen.getByLabelText('Category'), { target: { value: 'pacing' } });
++    expect(screen.getByText('Sagging middle')).toBeTruthy();
++    expect(screen.queryByText('Confusable names')).toBeNull();
++  });
++
++  it('honors a category filter supplied via the URL query (#1606)', () => {
++    renderCategory(['/?fcat=naming']);
++    expect(screen.getByText('Confusable names')).toBeTruthy();
++    expect(screen.queryByText('Sagging middle')).toBeNull();
++  });
++
+   it('honors filters supplied via the URL query so a view is deep-linkable (#1600)', () => {
+     renderTwoCheck(['/?fsev=low']);
+     expect(screen.getByText('Sagging middle')).toBeTruthy();
+diff --git a/client/src/components/pipeline/editorial/EditorialHealthPanel.test.jsx b/client/src/components/pipeline/editorial/EditorialHealthPanel.test.jsx
+index 533c631a..e470bb6c 100644
+--- a/client/src/components/pipeline/editorial/EditorialHealthPanel.test.jsx
++++ b/client/src/components/pipeline/editorial/EditorialHealthPanel.test.jsx
+@@ -1,5 +1,6 @@
+ import { describe, it, expect, vi, beforeEach } from 'vitest';
+ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
++import { MemoryRouter, useSearchParams } from 'react-router-dom';
+ import EditorialHealthPanel from './EditorialHealthPanel';
+
+ const getEditorialHealth = vi.fn();
+@@ -10,6 +11,21 @@ vi.mock('../../../services/api', () => ({
+ }));
+ vi.mock('../../ui/Toast', () => ({ default: { error: vi.fn(), success: vi.fn() } }));
+
++// Surfaces the live URL query string so a click that deep-links a triage filter
++// (#1606) is assertable.
++function Probe() {
++  const [sp] = useSearchParams();
++  return <div data-testid="search-params">{sp.toString()}</div>;
++}
++const wrap = (props, route = '/') => (
++  <MemoryRouter initialEntries={[route]}>
++    <EditorialHealthPanel {...props} />
++    <Probe />
++  </MemoryRouter>
++);
++const renderPanel = (props = {}, route) => render(wrap(props, route));
++const params = () => screen.getByTestId('search-params').textContent;
++
+ const health = (over = {}) => ({
+   seriesId: 'ser-1',
+   score: 83,
+@@ -31,18 +47,22 @@ const health = (over = {}) => ({
+ beforeEach(() => {
+   getEditorialHealth.mockReset();
+   setEditorialReadinessGate.mockReset();
++  // jsdom doesn't implement scrollIntoView; stub it so the deep-link scroll is a no-op.
++  window.HTMLElement.prototype.scrollIntoView = vi.fn();
+ });
+
+ describe('EditorialHealthPanel', () => {
+   it('renders nothing without a series', () => {
+-    const { container } = render(<EditorialHealthPanel seriesId="" />);
+-    expect(container.firstChild).toBeNull();
++    const { container } = renderPanel({ seriesId: '' });
++    // The router + probe still render; the panel itself renders null.
++    expect(screen.queryByText('Editorial Health')).toBeNull();
+     expect(getEditorialHealth).not.toHaveBeenCalled();
++    expect(container).toBeTruthy();
+   });
+
+   it('shows the score, readiness, severity breakdown and trend delta', async () => {
+     getEditorialHealth.mockResolvedValue(health());
+-    render(<EditorialHealthPanel seriesId="ser-1" />);
++    renderPanel({ seriesId: 'ser-1' });
+     expect(await screen.findByText('83')).toBeTruthy();
+     expect(screen.getByText('Not ready')).toBeTruthy();
+     expect(screen.getByText('+13')).toBeTruthy();
+@@ -53,13 +73,13 @@ describe('EditorialHealthPanel', () => {
+     getEditorialHealth.mockResolvedValue(health({
+       trend: { points: [{ score: 90 }, { score: 70 }], regressions: [{ category: 'continuity', from: 1, to: 2 }], delta: -20 },
+     }));
+-    render(<EditorialHealthPanel seriesId="ser-1" />);
++    renderPanel({ seriesId: 'ser-1' });
+     expect(await screen.findByText('1→2')).toBeTruthy();
+   });
+
+   it('marks ready when the gate is satisfied', async () => {
+     getEditorialHealth.mockResolvedValue(health({ ready: true, score: 100, openBySeverity: { high: 0, medium: 0, low: 0 }, open: 0 }));
+-    render(<EditorialHealthPanel seriesId="ser-1" />);
++    renderPanel({ seriesId: 'ser-1' });
+     expect(await screen.findByText('Ready')).toBeTruthy();
+     expect(screen.getByText('No open findings')).toBeTruthy();
+   });
+@@ -67,7 +87,7 @@ describe('EditorialHealthPanel', () => {
+   it('persists a readiness-gate change and refetches', async () => {
+     getEditorialHealth.mockResolvedValue(health());
+     setEditorialReadinessGate.mockResolvedValue({ readinessGate: 'noOpenHighOrMedium' });
+-    render(<EditorialHealthPanel seriesId="ser-1" />);
++    renderPanel({ seriesId: 'ser-1' });
+     await screen.findByText('83');
+     fireEvent.change(screen.getByLabelText('Ready when:'), { target: { value: 'noOpenHighOrMedium' } });
+     await waitFor(() => expect(setEditorialReadinessGate).toHaveBeenCalledWith('noOpenHighOrMedium', { silent: true }));
+@@ -77,9 +97,9 @@ describe('EditorialHealthPanel', () => {
+
+   it('refetches when refreshKey changes', async () => {
+     getEditorialHealth.mockResolvedValue(health());
+-    const { rerender } = render(<EditorialHealthPanel seriesId="ser-1" refreshKey={0} />);
++    const { rerender } = renderPanel({ seriesId: 'ser-1', refreshKey: 0 });
+     await screen.findByText('83');
+-    rerender(<EditorialHealthPanel seriesId="ser-1" refreshKey={1} />);
++    rerender(wrap({ seriesId: 'ser-1', refreshKey: 1 }));
+     await waitFor(() => expect(getEditorialHealth).toHaveBeenCalledTimes(2));
+   });
+
+@@ -87,7 +107,7 @@ describe('EditorialHealthPanel', () => {
+     getEditorialHealth.mockResolvedValue(health({
+       trend: { points: [{ score: 83 }], regressions: [], delta: 0 },
+     }));
+-    render(<EditorialHealthPanel seriesId="ser-1" />);
++    renderPanel({ seriesId: 'ser-1' });
+     await screen.findByText('83');
+     // The "+0/0" delta chip should not render for a single revision.
+     expect(screen.queryByTitle('Change since the previous revision')).toBeNull();
+@@ -110,7 +130,7 @@ describe('EditorialHealthPanel', () => {
+       'naming.dissimilar-names': { label: 'Name dissimilarity' },
+       'roster.economy': { label: 'Cast economy' },
+     };
+-    render(<EditorialHealthPanel seriesId="ser-1" checksById={checksById} />);
++    renderPanel({ seriesId: 'ser-1', checksById });
+     await screen.findByText('83');
+     expect(screen.getByText('Open by check')).toBeTruthy();
+     // Labels resolved from the catalog, sorted by count desc.
+@@ -125,7 +145,7 @@ describe('EditorialHealthPanel', () => {
+       openByCheck: { 'custom.orphan': 1 },
+       trend: { points: [{ score: 83, openByCheck: { 'custom.orphan': 1 } }], regressions: [], checkRegressions: [], delta: 0 },
+     }));
+-    render(<EditorialHealthPanel seriesId="ser-1" />);
++    renderPanel({ seriesId: 'ser-1' });
+     await screen.findByText('83');
+     expect(screen.getByText('custom.orphan')).toBeTruthy();
+   });
+@@ -138,7 +158,7 @@ describe('EditorialHealthPanel', () => {
+         { issueNumber: 3, score: 100, open: 0, openBySeverity: { high: 0, medium: 0, low: 0 } },
+       ],
+     }));
+-    render(<EditorialHealthPanel seriesId="ser-1" />);
++    renderPanel({ seriesId: 'ser-1' });
+     await screen.findByText('83');
+     // Two issues carry open findings (issue 3 is clean → excluded); expand.
+     const toggle = screen.getByText(/By issue \(2\)/);
+@@ -147,4 +167,86 @@ describe('EditorialHealthPanel', () => {
+     expect(screen.getByText('Issue 1')).toBeTruthy();
+     expect(screen.queryByText('Issue 3')).toBeNull();
+   });
++
++  it('deep-links the triage category filter when a category row is clicked (#1606)', async () => {
++    getEditorialHealth.mockResolvedValue(health());
++    renderPanel({ seriesId: 'ser-1' }, '/?series=ser-1');
++    await screen.findByText('83');
++    fireEvent.click(screen.getByTitle('Filter findings to continuity'));
++    await waitFor(() => expect(params()).toContain('fcat=continuity'));
++    // The page's own params are preserved (filter is additive, not a replace).
++    expect(params()).toContain('series=ser-1');
++  });
++
++  it('toggles the category filter off when its active row is clicked again (#1606)', async () => {
++    getEditorialHealth.mockResolvedValue(health());
++    renderPanel({ seriesId: 'ser-1' }, '/?fcat=continuity');
++    await screen.findByText('83');
++    // The active row offers a clear affordance.
++    fireEvent.click(screen.getByTitle('Clear the continuity filter'));
++    await waitFor(() => expect(params()).not.toContain('fcat=continuity'));
++  });
++
++  it('additively toggles multiple category rows without clearing siblings (#1606)', async () => {
++    getEditorialHealth.mockResolvedValue(health());
++    renderPanel({ seriesId: 'ser-1' }, '/?keep=yes&fcat=continuity');
++    await screen.findByText('83');
++    fireEvent.click(screen.getByTitle('Filter findings to pacing'));
++    await waitFor(() => expect(params()).toContain('fcat=continuity%2Cpacing'));
++    expect(screen.getByTitle('Clear the continuity filter')).toBeTruthy();
++    expect(screen.getByTitle('Clear the pacing filter')).toBeTruthy();
++    fireEvent.click(screen.getByTitle('Clear the continuity filter'));
++    await waitFor(() => expect(params()).toContain('fcat=pacing'));
++    expect(params()).toContain('keep=yes');
++  });
++
++  it('deep-links the triage check filter when a check row is clicked (#1606)', async () => {
++    getEditorialHealth.mockResolvedValue(health({
++      openByCheck: { 'roster.economy': 1 },
++      trend: { points: [{ score: 83, openByCheck: { 'roster.economy': 1 } }], regressions: [], checkRegressions: [], delta: 0 },
++    }));
++    renderPanel({ seriesId: 'ser-1', checksById: { 'roster.economy': { label: 'Cast economy' } } });
++    await screen.findByText('83');
++    fireEvent.click(screen.getByTitle('Filter findings to Cast economy'));
++    await waitFor(() => expect(params()).toContain('fcheck=roster.economy'));
++  });
++
++  it('renders a non-triage-filterable check row as static text, not a deep-link (#1606)', async () => {
++    // The synthetic `completeness` bucket counts null-checkId findings the triage
++    // drops, so it isn't in the filterable set — its row must not link to an empty list.
++    getEditorialHealth.mockResolvedValue(health({
++      openByCheck: { completeness: 2 },
++      trend: { points: [{ score: 83, openByCheck: { completeness: 2 } }], regressions: [], checkRegressions: [], delta: 0 },
++    }));
++    renderPanel({ seriesId: 'ser-1', filterableCheckIds: new Set(), filterableCategories: new Set() });
++    await screen.findByText('83');
++    const row = screen.getByTitle(/completeness findings aren't in the triage filter/i);
++    expect(row.tagName).toBe('SPAN');
++    expect(screen.queryByTitle('Filter findings to completeness')).toBeNull();
++  });
++
++  it('renders a non-triage-filterable category row as static text (#1606)', async () => {
++    getEditorialHealth.mockResolvedValue(health({ openByCategory: { plot: 2 } }));
++    renderPanel({ seriesId: 'ser-1', filterableCheckIds: new Set(), filterableCategories: new Set() });
++    await screen.findByText('83');
++    const row = screen.getByTitle(/plot findings aren't in the triage filter/i);
++    expect(row.tagName).toBe('SPAN');
++    expect(screen.queryByTitle('Filter findings to plot')).toBeNull();
++  });
++
++  it('keeps a filterable check row clickable when filterable sets are provided (#1606)', async () => {
++    getEditorialHealth.mockResolvedValue(health({
++      openByCheck: { 'roster.economy': 1 },
++      trend: { points: [{ score: 83, openByCheck: { 'roster.economy': 1 } }], regressions: [], checkRegressions: [], delta: 0 },
++    }));
++    renderPanel({
++      seriesId: 'ser-1',
++      checksById: { 'roster.economy': { label: 'Cast economy' } },
++      filterableCheckIds: new Set(['roster.economy']),
++      filterableCategories: new Set(),
++    });
++    await screen.findByText('83');
++    fireEvent.click(screen.getByTitle('Filter findings to Cast economy'));
++    await waitFor(() => expect(params()).toContain('fcheck=roster.economy'));
++  });
+ });
+diff --git a/client/src/lib/editorialChecks.test.js b/client/src/lib/editorialChecks.test.js
+index 0018327f..b3002b06 100644
+--- a/client/src/lib/editorialChecks.test.js
++++ b/client/src/lib/editorialChecks.test.js
+@@ -6,6 +6,9 @@ import {
+   openFindingsTotal,
+   findingManuscriptLink,
+   scopeLabel,
++  categoryLabel,
++  normCategory,
++  deriveFilterableFindingFacets,
+   deriveFindingFacets,
+   applyFindingsView,
+   normalizeFindingSort,
+@@ -154,9 +157,9 @@ describe('scopeLabel', () => {
+ });
+
+ const findingsFixture = () => [
+-  { id: 'a1', checkId: 'pacing', status: 'open', severity: 'high', issueNumber: 2, problem: 'Slow open', location: 'p1' },
+-  { id: 'a2', checkId: 'pacing', status: 'dismissed', severity: 'low', issueNumber: 2, problem: 'Old note' },
+-  { id: 'b1', checkId: 'naming', status: 'open', severity: 'medium', issueNumber: 1, problem: 'Confusable names' },
++  { id: 'a1', checkId: 'pacing', category: 'pacing', status: 'open', severity: 'high', issueNumber: 2, problem: 'Slow open', location: 'p1' },
++  { id: 'a2', checkId: 'pacing', category: 'pacing', status: 'dismissed', severity: 'low', issueNumber: 2, problem: 'Old note' },
++  { id: 'b1', checkId: 'naming', category: 'naming', status: 'open', severity: 'medium', issueNumber: 1, problem: 'Confusable names' },
+   { id: 'b2', checkId: 'naming', status: 'open', severity: 'low', issueNumber: null, problem: 'Series-wide naming' },
+ ];
+ const fixtureRows = {
+@@ -192,6 +195,37 @@ describe('deriveFindingFacets', () => {
+     expect(f.scopes.map((s) => s.scope)).toEqual(['scene', 'series']);
+     expect(f.issues.map((i) => i.key)).toEqual(['1', '2', 'none']);
+     expect(f.issues.find((i) => i.key === 'none').label).toBe('Series-wide');
++    // Categories come from the finding's `category` field; a finding without one
++    // buckets under 'other'. Sorted by display label.
++    expect(f.categories.map((c) => c.category)).toEqual(['naming', 'other', 'pacing']);
++    expect(f.categories.map((c) => c.label)).toEqual(['Naming', 'Other', 'Pacing']);
++  });
++});
++
++describe('normCategory / categoryLabel', () => {
++  it('normalizes a finding category, bucketing missing/blank under "other"', () => {
++    expect(normCategory({ category: 'continuity' })).toBe('continuity');
++    expect(normCategory({ category: '' })).toBe('other');
++    expect(normCategory({})).toBe('other');
++    expect(normCategory(null)).toBe('other');
++  });
++
++  it('title-cases a category token for display', () => {
++    expect(categoryLabel('continuity')).toBe('Continuity');
++    expect(categoryLabel('')).toBe('Other');
++  });
++});
++
++describe('deriveFilterableFindingFacets', () => {
++  it('includes only open check-sourced findings and normalizes categories', () => {
++    const facets = deriveFilterableFindingFacets([
++      { checkId: 'pacing.drag', category: 'pacing', status: 'open' },
++      { checkId: 'naming.similar', category: '', status: 'open' },
++      { checkId: 'closed.check', category: 'style', status: 'dismissed' },
++      { checkId: null, category: 'continuity', status: 'open' },
++    ]);
++    expect([...facets.checkIds]).toEqual(['pacing.drag', 'naming.similar']);
++    expect([...facets.categories]).toEqual(['pacing', 'other']);
+   });
+ });
+
+@@ -218,13 +252,24 @@ describe('applyFindingsView', () => {
+     expect(ids).toEqual(['a1', 'b1', 'b2']);
+   });
+
+-  it('filters by scope (category) and by check id', () => {
++  it('filters by scope and by check id', () => {
+     const byScope = applyFindingsView(groupsFixture(), { scopes: new Set(['series']) }, 'scope');
+     expect(byScope.map((g) => g.checkId)).toEqual(['naming']);
+     const byCheck = applyFindingsView(groupsFixture(), { checkIds: new Set(['pacing']) }, 'scope');
+     expect(byCheck.map((g) => g.checkId)).toEqual(['pacing']);
+   });
+
++  it('filters by finding category (comment-level), bucketing un-categorized under "other"', () => {
++    const byPacing = applyFindingsView(groupsFixture(), { categories: new Set(['pacing']) }, 'scope');
++    expect(byPacing.flatMap((g) => g.comments.map((c) => c.id))).toEqual(['a1', 'a2']);
++    // 'naming' category only matches b1 (b2 has no category → 'other'), so the
++    // naming group keeps just b1.
++    const byNaming = applyFindingsView(groupsFixture(), { categories: new Set(['naming']) }, 'scope');
++    expect(byNaming.flatMap((g) => g.comments.map((c) => c.id))).toEqual(['b1']);
++    const byOther = applyFindingsView(groupsFixture(), { categories: new Set(['other']) }, 'scope');
++    expect(byOther.flatMap((g) => g.comments.map((c) => c.id))).toEqual(['b2']);
++  });
++
+   it('filters by issue, including the series-wide "none" bucket', () => {
+     const issue2 = applyFindingsView(groupsFixture(), { issues: new Set(['2']) }, 'scope');
+     expect(issue2.flatMap((g) => g.comments.map((c) => c.id))).toEqual(['a1', 'a2']);

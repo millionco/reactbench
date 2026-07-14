@@ -1,0 +1,369 @@
+diff --git a/client/src/pages/Alerts.test.tsx b/client/src/pages/Alerts.test.tsx
+index a61179e..21bd96a 100644
+--- a/client/src/pages/Alerts.test.tsx
++++ b/client/src/pages/Alerts.test.tsx
+@@ -1,4 +1,4 @@
+-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
++import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+ import userEvent from '@testing-library/user-event';
+ import { StrictMode } from 'react';
+ import { MemoryRouter } from 'react-router-dom';
+@@ -1303,4 +1303,126 @@ describe('Alerts page', () => {
+       Array.from({ length: 55 }, (_, index) => String(index + 1)),
+     ));
+   });
++
++  test('shows delete permission guidance inside the confirmation modal', async () => {
++    const alerts: SlimAlert[] = [{
++      id: 1,
++      created_at: '2026-03-23T10:00:00.000Z',
++      scenario: 'crowdsecurity/ssh-bf',
++      machine_id: 'machine-1',
++      machine_alias: 'host-a',
++      source: { ip: '1.2.3.4', value: '1.2.3.4', cn: 'DE', as_name: 'Hetzner' },
++      target: 'ssh',
++      meta_search: 'ssh',
++      decisions: [{ id: 10, value: '1.2.3.4', type: 'ban', origin: 'manual', simulated: false, expired: false }],
++    }];
++    const permissionError = Object.assign(new Error('Permission denied.'), {
++      helpLink: 'https://github.com/TheDuffman85/crowdsec-web-ui#trusted-ips-for-delete-operations-optional',
++      helpText: 'Trusted IPs for Delete Operations',
++    });
++    vi.mocked(api.fetchAlertsPaginated).mockImplementation(async (page, pageSize) =>
++      toPaginatedAlerts(alerts, page, pageSize),
++    );
++    vi.mocked(api.deleteAlert).mockRejectedValueOnce(permissionError);
++
++    render(
++      <MemoryRouter initialEntries={['/alerts']}>
++        <Alerts />
++      </MemoryRouter>,
++    );
++
++    await waitFor(() => expect(screen.getByText('1.2.3.4')).toBeInTheDocument());
++
++    await userEvent.click(screen.getAllByTitle('Delete Alert')[0]);
++    let deleteDialog = screen.getByRole('dialog', { name: 'Delete Alert?' });
++    await userEvent.click(within(deleteDialog).getByRole('button', { name: 'Delete' }));
++
++    deleteDialog = screen.getByRole('dialog', { name: 'Delete Alert?' });
++    const modalAlert = await within(deleteDialog).findByRole('alert');
++    expect(modalAlert).toHaveTextContent('Permission denied.');
++    await waitFor(() => expect(within(modalAlert).getByRole('button')).toHaveFocus());
++    expect(within(modalAlert).getByRole('link', { name: 'Trusted IPs for Delete Operations' })).toHaveAttribute(
++      'href',
++      'https://github.com/TheDuffman85/crowdsec-web-ui#trusted-ips-for-delete-operations-optional',
++    );
++    await userEvent.click(within(modalAlert).getByRole('button'));
++    expect(within(deleteDialog).queryByRole('alert')).not.toBeInTheDocument();
++    expect(screen.getByRole('dialog', { name: 'Delete Alert?' })).toBeInTheDocument();
++    await waitFor(() => expect(within(deleteDialog).getByRole('button', { name: 'Delete' })).toHaveFocus());
++
++    vi.mocked(api.deleteAlert).mockResolvedValueOnce(undefined);
++    await userEvent.click(within(deleteDialog).getByRole('button', { name: 'Delete' }));
++    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Delete Alert?' })).not.toBeInTheDocument());
++
++    await userEvent.click(screen.getAllByTitle('Delete Alert')[0]);
++    deleteDialog = screen.getByRole('dialog', { name: 'Delete Alert?' });
++    expect(within(deleteDialog).queryByRole('alert')).not.toBeInTheDocument();
++  });
++
++  test('does not leak an undismissed delete error into a reopened modal', async () => {
++    vi.mocked(api.deleteAlert).mockRejectedValueOnce(new Error('Temporary delete failure.'));
++
++    render(
++      <MemoryRouter initialEntries={['/alerts']}>
++        <Alerts />
++      </MemoryRouter>,
++    );
++
++    await waitFor(() => expect(screen.getByText('1.2.3.4')).toBeInTheDocument());
++    await userEvent.click(screen.getAllByTitle('Delete Alert')[0]);
++    let deleteDialog = screen.getByRole('dialog', { name: 'Delete Alert?' });
++    await userEvent.click(within(deleteDialog).getByRole('button', { name: 'Delete' }));
++
++    deleteDialog = screen.getByRole('dialog', { name: 'Delete Alert?' });
++    expect(await within(deleteDialog).findByRole('alert')).toHaveTextContent('Temporary delete failure.');
++    await userEvent.click(within(deleteDialog).getByRole('button', { name: 'Cancel' }));
++    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Delete Alert?' })).not.toBeInTheDocument());
++
++    await userEvent.click(screen.getAllByTitle('Delete Alert')[0]);
++    deleteDialog = screen.getByRole('dialog', { name: 'Delete Alert?' });
++    expect(within(deleteDialog).queryByRole('alert')).not.toBeInTheDocument();
++  });
++
++  test('locks a pending alert deletion against duplicate activation and dismissal', async () => {
++    let resolveDelete = () => {};
++    const pendingDelete = new Promise<void>((resolve) => {
++      resolveDelete = resolve;
++    });
++    const deleteAlertMock = vi.mocked(api.deleteAlert).mockReturnValueOnce(pendingDelete);
++    deleteAlertMock.mockClear();
++
++    render(
++      <MemoryRouter initialEntries={['/alerts']}>
++        <Alerts />
++      </MemoryRouter>,
++    );
++
++    await waitFor(() => expect(screen.getByText('1.2.3.4')).toBeInTheDocument());
++    await userEvent.click(screen.getAllByTitle('Delete Alert')[0]);
++    const deleteDialog = screen.getByRole('dialog', { name: 'Delete Alert?' });
++    const deleteButton = within(deleteDialog).getByRole('button', { name: 'Delete' });
++    const backdrop = deleteDialog.parentElement;
++    if (!backdrop) throw new Error('Expected the alert delete backdrop');
++    const headerClose = within(deleteDialog).queryByRole('button', { name: 'Close' });
++
++    act(() => {
++      deleteButton.click();
++      deleteButton.click();
++      headerClose?.click();
++      fireEvent.click(backdrop);
++      fireEvent.keyDown(document, { key: 'Escape' });
++    });
++
++    expect(deleteAlertMock).toHaveBeenCalledTimes(1);
++    expect(within(deleteDialog).getByRole('button', { name: /^Delet/ })).toBeDisabled();
++    expect(within(deleteDialog).getByRole('button', { name: 'Cancel' })).toBeDisabled();
++    const pendingHeaderClose = within(deleteDialog).queryByRole('button', { name: 'Close' });
++    if (pendingHeaderClose) expect(pendingHeaderClose).toBeDisabled();
++    expect(screen.getByRole('dialog', { name: 'Delete Alert?' })).toBeInTheDocument();
++
++    await act(async () => {
++      resolveDelete();
++      await pendingDelete;
++    });
++  });
+ });
+diff --git a/client/src/pages/Decisions.test.tsx b/client/src/pages/Decisions.test.tsx
+index 8436d81..6bd9476 100644
+--- a/client/src/pages/Decisions.test.tsx
++++ b/client/src/pages/Decisions.test.tsx
+@@ -1,4 +1,4 @@
+-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
++import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+ import userEvent from '@testing-library/user-event';
+ import { StrictMode } from 'react';
+ import { MemoryRouter } from 'react-router-dom';
+@@ -837,4 +837,221 @@ describe('Decisions page', () => {
+
+     await waitFor(() => expect(cleanupByIpMock).toHaveBeenCalledWith('1.2.3.4'));
+   });
++
++  test('shows add permission guidance inside the add decision modal', async () => {
++    const permissionError = Object.assign(new Error('Permission denied.'), {
++      helpLink: 'https://github.com/TheDuffman85/crowdsec-web-ui#trusted-ips-for-delete-operations-optional',
++      helpText: 'Trusted IPs for Write Operations',
++    });
++    vi.mocked(api.addDecision).mockRejectedValueOnce(permissionError);
++
++    render(
++      <MemoryRouter initialEntries={['/decisions']}>
++        <Decisions />
++      </MemoryRouter>,
++    );
++
++    await waitFor(() => expect(screen.getByText('1.2.3.4')).toBeInTheDocument());
++
++    await userEvent.click(screen.getByRole('button', { name: 'Add Decision' }));
++    let addDialog = screen.getByRole('dialog', { name: 'Add Manual Decision' });
++    const ipInput = within(addDialog).getByPlaceholderText('1.2.3.4');
++    await userEvent.type(ipInput, '203.0.113.10');
++    await userEvent.click(within(addDialog).getByRole('button', { name: 'Add Decision' }));
++
++    addDialog = screen.getByRole('dialog', { name: 'Add Manual Decision' });
++    const modalAlert = await within(addDialog).findByRole('alert');
++    expect(modalAlert).toHaveTextContent('Permission denied.');
++    await waitFor(() => expect(within(modalAlert).getByRole('button')).toHaveFocus());
++    expect(within(modalAlert).getByRole('link', { name: 'Trusted IPs for Write Operations' })).toHaveAttribute(
++      'href',
++      'https://github.com/TheDuffman85/crowdsec-web-ui#trusted-ips-for-delete-operations-optional',
++    );
++    expect(within(addDialog).getByPlaceholderText('1.2.3.4')).toHaveValue('203.0.113.10');
++
++    let rejectRetry = (_error: Error) => {};
++    const pendingRetry = new Promise<void>((_resolve, reject) => {
++      rejectRetry = reject;
++    });
++    vi.mocked(api.addDecision).mockReturnValueOnce(pendingRetry);
++    await userEvent.click(within(addDialog).getByRole('button', { name: 'Add Decision' }));
++    expect(within(addDialog).getByRole('alert')).toHaveTextContent('Permission denied.');
++    expect(within(addDialog).getByRole('link', { name: 'Trusted IPs for Write Operations' })).toBeInTheDocument();
++    expect(addDialog.querySelector<HTMLButtonElement>('button[type="submit"]')).toBeDisabled();
++    expect(within(modalAlert).getByRole('button')).toBeDisabled();
++
++    await act(async () => {
++      rejectRetry(new Error('Retry permission denied.'));
++      await pendingRetry.catch(() => undefined);
++    });
++    const replacementAlert = within(addDialog).getByRole('alert');
++    expect(replacementAlert).toHaveTextContent('Retry permission denied.');
++    expect(within(replacementAlert).queryByRole('link')).not.toBeInTheDocument();
++    await waitFor(() => expect(within(replacementAlert).getByRole('button')).toHaveFocus());
++    await userEvent.click(within(replacementAlert).getByRole('button'));
++    expect(within(addDialog).queryByRole('alert')).not.toBeInTheDocument();
++    expect(screen.getByRole('dialog', { name: 'Add Manual Decision' })).toBeInTheDocument();
++    expect(within(addDialog).getByPlaceholderText('1.2.3.4')).toHaveValue('203.0.113.10');
++    await waitFor(() => expect(within(addDialog).getByRole('button', { name: 'Add Decision' })).toHaveFocus());
++
++    vi.mocked(api.addDecision).mockRejectedValueOnce(new Error('Retry rejected.'));
++    await userEvent.click(within(addDialog).getByRole('button', { name: 'Add Decision' }));
++    const retryAlert = await within(addDialog).findByRole('alert');
++    expect(retryAlert).toHaveTextContent('Retry rejected.');
++    expect(within(retryAlert).queryByRole('link')).not.toBeInTheDocument();
++    expect(within(addDialog).getByPlaceholderText('1.2.3.4')).toHaveValue('203.0.113.10');
++  });
++
++  test('shows delete permission guidance inside the confirmation modal', async () => {
++    const permissionError = Object.assign(new Error('Permission denied.'), {
++      helpLink: 'https://github.com/TheDuffman85/crowdsec-web-ui#trusted-ips-for-delete-operations-optional',
++      helpText: 'Trusted IPs for Delete Operations',
++    });
++    vi.mocked(api.deleteDecision).mockRejectedValueOnce(permissionError);
++
++    render(
++      <MemoryRouter initialEntries={['/decisions']}>
++        <Decisions />
++      </MemoryRouter>,
++    );
++
++    await waitFor(() => expect(screen.getByText('1.2.3.4')).toBeInTheDocument());
++
++    await userEvent.click(screen.getAllByTitle('Delete Decision')[0]);
++    let deleteDialog = screen.getByRole('dialog', { name: 'Delete Decision?' });
++    await userEvent.click(within(deleteDialog).getByRole('button', { name: 'Delete' }));
++
++    deleteDialog = screen.getByRole('dialog', { name: 'Delete Decision?' });
++    const modalAlert = await within(deleteDialog).findByRole('alert');
++    expect(modalAlert).toHaveTextContent('Permission denied.');
++    await waitFor(() => expect(within(modalAlert).getByRole('button')).toHaveFocus());
++    expect(within(modalAlert).getByRole('link', { name: 'Trusted IPs for Delete Operations' })).toHaveAttribute(
++      'href',
++      'https://github.com/TheDuffman85/crowdsec-web-ui#trusted-ips-for-delete-operations-optional',
++    );
++    await userEvent.click(within(modalAlert).getByRole('button'));
++    expect(within(deleteDialog).queryByRole('alert')).not.toBeInTheDocument();
++    expect(screen.getByRole('dialog', { name: 'Delete Decision?' })).toBeInTheDocument();
++    await waitFor(() => expect(within(deleteDialog).getByRole('button', { name: 'Delete' })).toHaveFocus());
++
++    vi.mocked(api.deleteDecision).mockResolvedValueOnce(undefined);
++    await userEvent.click(within(deleteDialog).getByRole('button', { name: 'Delete' }));
++    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Delete Decision?' })).not.toBeInTheDocument());
++
++    await userEvent.click(screen.getAllByTitle('Delete Decision')[0]);
++    deleteDialog = screen.getByRole('dialog', { name: 'Delete Decision?' });
++    expect(within(deleteDialog).queryByRole('alert')).not.toBeInTheDocument();
++  });
++
++  test('locks a pending decision deletion against duplicate activation and dismissal', async () => {
++    let resolveDelete = () => {};
++    const pendingDelete = new Promise<void>((resolve) => {
++      resolveDelete = resolve;
++    });
++    const deleteDecisionMock = vi.mocked(api.deleteDecision).mockReturnValueOnce(pendingDelete);
++    deleteDecisionMock.mockClear();
++
++    render(
++      <MemoryRouter initialEntries={['/decisions']}>
++        <Decisions />
++      </MemoryRouter>,
++    );
++
++    await waitFor(() => expect(screen.getByText('1.2.3.4')).toBeInTheDocument());
++    await userEvent.click(screen.getAllByTitle('Delete Decision')[0]);
++    const deleteDialog = screen.getByRole('dialog', { name: 'Delete Decision?' });
++    const deleteButton = within(deleteDialog).getByRole('button', { name: 'Delete' });
++    const backdrop = deleteDialog.parentElement;
++    if (!backdrop) throw new Error('Expected the decision delete backdrop');
++    const headerClose = within(deleteDialog).queryByRole('button', { name: 'Close' });
++
++    act(() => {
++      deleteButton.click();
++      deleteButton.click();
++      headerClose?.click();
++      fireEvent.click(backdrop);
++      fireEvent.keyDown(document, { key: 'Escape' });
++    });
++
++    expect(deleteDecisionMock).toHaveBeenCalledTimes(1);
++    expect(within(deleteDialog).getByRole('button', { name: /^Delet/ })).toBeDisabled();
++    expect(within(deleteDialog).getByRole('button', { name: 'Cancel' })).toBeDisabled();
++    const pendingHeaderClose = within(deleteDialog).queryByRole('button', { name: 'Close' });
++    if (pendingHeaderClose) expect(pendingHeaderClose).toBeDisabled();
++    expect(screen.getByRole('dialog', { name: 'Delete Decision?' })).toBeInTheDocument();
++
++    await act(async () => {
++      resolveDelete();
++      await pendingDelete;
++    });
++  });
++
++  test('locks a pending manual decision submission and preserves its values after failure', async () => {
++    let rejectAdd = (_error: Error) => {};
++    const pendingAdd = new Promise<void>((_resolve, reject) => {
++      rejectAdd = reject;
++    });
++    const addDecisionMock = vi.mocked(api.addDecision).mockReturnValueOnce(pendingAdd);
++    addDecisionMock.mockClear();
++
++    render(
++      <MemoryRouter initialEntries={['/decisions']}>
++        <Decisions />
++      </MemoryRouter>,
++    );
++
++    await waitFor(() => expect(screen.getByText('1.2.3.4')).toBeInTheDocument());
++    await userEvent.click(screen.getByRole('button', { name: 'Add Decision' }));
++    const addDialog = screen.getByRole('dialog', { name: 'Add Manual Decision' });
++    const ipInput = within(addDialog).getByPlaceholderText('1.2.3.4');
++    await userEvent.type(ipInput, '203.0.113.10');
++    const durationInput = within(addDialog).getByPlaceholderText('4h');
++    await userEvent.clear(durationInput);
++    await userEvent.type(durationInput, '12h');
++    const reasonInput = within(addDialog).getByPlaceholderText('Manual ban');
++    await userEvent.clear(reasonInput);
++    await userEvent.type(reasonInput, 'investigation');
++    const form = ipInput.closest('form');
++    if (!form) throw new Error('Expected the add decision form');
++    const headerClose = within(addDialog).queryByRole('button', { name: 'Close' });
++    const backdrop = addDialog.parentElement;
++    if (!backdrop) throw new Error('Expected the add decision backdrop');
++
++    act(() => {
++      fireEvent.submit(form);
++      fireEvent.submit(form);
++      headerClose?.click();
++      fireEvent.click(backdrop);
++      fireEvent.keyDown(document, { key: 'Escape' });
++    });
++
++    expect(addDecisionMock).toHaveBeenCalledTimes(1);
++    expect(addDialog.querySelector<HTMLButtonElement>('button[type="submit"]')).toBeDisabled();
++    expect(within(addDialog).getByRole('button', { name: 'Cancel' })).toBeDisabled();
++    const pendingHeaderClose = within(addDialog).queryByRole('button', { name: 'Close' });
++    if (pendingHeaderClose) expect(pendingHeaderClose).toBeDisabled();
++    expect(screen.getByRole('dialog', { name: 'Add Manual Decision' })).toBeInTheDocument();
++
++    await act(async () => {
++      rejectAdd(new Error('Still pending failed.'));
++      await pendingAdd.catch(() => undefined);
++    });
++
++    const retryDialog = screen.getByRole('dialog', { name: 'Add Manual Decision' });
++    expect(within(retryDialog).getByRole('alert')).toHaveTextContent('Still pending failed.');
++    expect(within(retryDialog).getByPlaceholderText('1.2.3.4')).toHaveValue('203.0.113.10');
++    expect(within(retryDialog).getByPlaceholderText('4h')).toHaveValue('12h');
++    expect(within(retryDialog).getByPlaceholderText('Manual ban')).toHaveValue('investigation');
++    expect(within(retryDialog).getByRole('button', { name: 'Add Decision' })).toBeEnabled();
++
++    addDecisionMock.mockResolvedValueOnce(undefined);
++    await userEvent.click(within(retryDialog).getByRole('button', { name: 'Add Decision' }));
++    await waitFor(() => expect(addDecisionMock).toHaveBeenCalledTimes(2));
++    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Add Manual Decision' })).not.toBeInTheDocument());
++
++    await userEvent.click(screen.getByRole('button', { name: 'Add Decision' }));
++    const reopenedDialog = screen.getByRole('dialog', { name: 'Add Manual Decision' });
++    expect(within(reopenedDialog).queryByRole('alert')).not.toBeInTheDocument();
++    expect(within(reopenedDialog).getByPlaceholderText('1.2.3.4')).toHaveValue('');
++  });
+ });

@@ -1,0 +1,88 @@
+diff --git a/src/components/AccessibleNavTree.tsx b/src/components/AccessibleNavTree.tsx
+index c8128bd..7318da1 100644
+--- a/src/components/AccessibleNavTree.tsx
++++ b/src/components/AccessibleNavTree.tsx
+@@ -57,36 +57,37 @@ export function AccessibleNavTree({ tree, label, visible = false, className, onA
+   // Start with the root expanded so its direct children (axes, series) are
+   // visible; deeper branches collapse until the user drills in.
+   const [expanded, setExpanded] = React.useState<Set<string>>(() => new Set([tree.id]))
+-  const [internalActiveId, setInternalActiveId] = React.useState<string>(tree.id)
++  const [selectedId, setSelectedId] = React.useState<string | null>(null)
+   const isControlled = controlledActiveId !== undefined
+-  const activeId = isControlled ? controlledActiveId : internalActiveId
+   const containerRef = React.useRef<HTMLDivElement>(null)
+   const itemRefs = React.useRef<Map<string, HTMLLIElement | null>>(new Map())
+ 
+   const parentMap = React.useMemo(() => buildParentMap(tree), [tree])
+-  const order = React.useMemo(() => flattenVisible(tree, expanded), [tree, expanded])
+ 
+-  // If the tree changes (new data) and the (uncontrolled) active node vanished, reset.
+-  React.useEffect(() => {
+-    if (isControlled) return
+-    if (!order.some((n) => n.id === internalActiveId)) setInternalActiveId(tree.id)
+-  }, [order, internalActiveId, tree.id, isControlled])
++  // Derive the active node id during render: the user's selection while it's
++  // still reachable, otherwise the root (covers mount and a data change that
++  // drops the selected node). When controlled, the parent owns it outright.
++  const visibleByExpanded = React.useMemo(() => flattenVisible(tree, expanded), [tree, expanded])
++  const activeId = isControlled
++    ? controlledActiveId
++    : selectedId !== null && visibleByExpanded.some((n) => n.id === selectedId)
++      ? selectedId
++      : tree.id
+ 
+   // Auto-expand the path to the active node so it's visible/focusable — matters
+-  // when the active node is set externally (canvas → tree) into a collapsed branch.
+-  React.useEffect(() => {
++  // when the active node is set externally (canvas → tree) into a collapsed
++  // branch. Derived from the active id rather than synced into state.
++  const effectiveExpanded = React.useMemo(() => {
+     const path: string[] = []
+     let cur = parentMap.get(activeId)
+     while (cur) { path.push(cur.id); cur = parentMap.get(cur.id) }
+-    if (path.length > 0) {
+-      setExpanded((s) => {
+-        if (path.every((id) => s.has(id))) return s
+-        const n = new Set(s)
+-        for (const id of path) n.add(id)
+-        return n
+-      })
+-    }
+-  }, [activeId, parentMap])
++    if (path.length === 0 || path.every((id) => expanded.has(id))) return expanded
++    const next = new Set(expanded)
++    for (const id of path) next.add(id)
++    return next
++  }, [activeId, parentMap, expanded])
++
++  const order = React.useMemo(() => flattenVisible(tree, effectiveExpanded), [tree, effectiveExpanded])
+ 
+   // Move DOM focus to the active item — but only while the tree already holds
+   // focus, so we never steal focus on mount or data change.
+@@ -126,7 +127,7 @@ export function AccessibleNavTree({ tree, label, visible = false, className, onA
+     // active node changes", and skipping it here also avoids redundant
+     // selection writes and double-counted reception telemetry.
+     if (node.id === activeId) return
+-    if (!isControlled) setInternalActiveId(node.id)
++    if (!isControlled) setSelectedId(node.id)
+     onActiveChange?.(node)
+     recordNav(node, "focus")
+   }, [onActiveChange, isControlled, recordNav, activeId])
+@@ -139,7 +140,7 @@ export function AccessibleNavTree({ tree, label, visible = false, className, onA
+     if (idx === -1) return
+     const node = order[idx]
+     const hasChildren = !!node.children && node.children.length > 0
+-    const isOpen = expanded.has(node.id)
++    const isOpen = effectiveExpanded.has(node.id)
+     let handled = true
+     switch (e.key) {
+       case "ArrowDown": setActive(order[Math.min(idx + 1, order.length - 1)]); break
+@@ -171,7 +172,7 @@ export function AccessibleNavTree({ tree, label, visible = false, className, onA
+ 
+   const renderNode = (node: NavTreeNode, posinset: number, setsize: number): React.ReactNode => {
+     const hasChildren = !!node.children && node.children.length > 0
+-    const isOpen = expanded.has(node.id)
++    const isOpen = effectiveExpanded.has(node.id)
+     return (
+       <li
+         key={node.id}

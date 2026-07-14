@@ -1,0 +1,13 @@
+diff --git a/src/calendar.tsx b/src/calendar.tsx
+index 4bedbdc0..d121c59e 100644
+--- a/src/calendar.tsx
++++ b/src/calendar.tsx
+@@ -1091,7 +1091,7 @@ export default class Calendar extends Component<CalendarProps, CalendarState> {
+         this.props.showMonthYearPicker || this.props.showQuarterYearPicker
+           ? addYears(fromMonthDate, monthsToAdd)
+           : addMonths(fromMonthDate, monthsToAdd);
+-      const monthKey = `month-${i}`;
++      const monthKey = `month-${monthDate.getFullYear()}-${monthDate.getMonth()}`;
+       const monthShowsDuplicateDaysEnd = i < monthsShown - 1;
+       const monthShowsDuplicateDaysStart = i > 0;
+       monthList.push(

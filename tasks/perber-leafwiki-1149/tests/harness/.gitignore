@@ -1,0 +1,10 @@
+node_modules
+app-src
+.pnpm-store
+.vite
+.vite-cache
+dist
+test-results
+playwright-report
+coverage
+.coverage-v8

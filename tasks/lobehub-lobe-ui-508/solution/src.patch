@@ -1,0 +1,189 @@
+diff --git a/src/Accordion/Accordion.tsx b/src/Accordion/Accordion.tsx
+index 4b0a2a4a..6fbf9a8e 100644
+--- a/src/Accordion/Accordion.tsx
++++ b/src/Accordion/Accordion.tsx
+@@ -40,7 +40,7 @@ const Accordion = memo<AccordionProps>(
+     const allItemKeys = validChildren.map((child, index) => (child.props as any).itemKey || index);
+
+     // If defaultExpandedKeys or expandedKeys is undefined, expand all items by default
+-    const initialExpandedKeys = defaultExpandedKeys ?? allItemKeys.slice(0, 1);
++    const initialExpandedKeys = defaultExpandedKeys ?? allItemKeys;
+
+     const [expandedKeys, setExpandedKeys] = useMergeState<Key[]>(initialExpandedKeys, {
+       onChange: onExpandedChange,
+@@ -57,6 +57,12 @@ const Accordion = memo<AccordionProps>(
+     const setExpandedKeysRef = useRef(setExpandedKeys);
+     setExpandedKeysRef.current = setExpandedKeys;
+
++    const stableIsOpenKey = useCallback((key: Key) => expandedKeysRef.current.includes(key), []);
++    const trackedIsOpenKey = useCallback(
++      (key: Key) => expandedKeys.includes(key),
++      [expandedKeys],
++    );
++
+     const toggleExpand = useCallback(
+       (key: Key) => {
+         const prev = expandedKeysRef.current;
+@@ -73,6 +79,24 @@ const Accordion = memo<AccordionProps>(
+       [accordion],
+     );
+
++    const toggleExpandKeys = useCallback(
++      (keys: Key[], preferredKey: Key) => {
++        const prev = expandedKeysRef.current;
++        const keySet = new Set(keys);
++        const isOpen = prev.some((key) => keySet.has(key));
++        let newKeys: Key[];
++
++        if (accordion) {
++          newKeys = isOpen ? [] : [preferredKey];
++        } else {
++          newKeys = isOpen ? prev.filter((key: Key) => !keySet.has(key)) : [...prev, preferredKey];
++        }
++
++        setExpandedKeysRef.current(newKeys);
++      },
++      [accordion],
++    );
++
+     const configValue = useMemo(
+       () => ({
+         disableAnimation,
+@@ -94,17 +118,24 @@ const Accordion = memo<AccordionProps>(
+       ],
+     );
+
++    const hasExplicitExpandedKeys =
++      expandedKeysProp !== undefined || defaultExpandedKeys !== undefined;
++
+     const content = (
+       <>
+         {validChildren.map((child, index) => {
+-          const childKey = (child.props as any).itemKey ?? index;
++          const hasChildItemKey = (child.props as any).itemKey !== undefined;
++          const childKey = hasChildItemKey ? (child.props as any).itemKey : index;
+           const itemIsOpen = expandedKeys.includes(childKey);
+           return (
+             <Fragment key={childKey}>
+               <AccordionItemStateProvider
+                 isOpen={itemIsOpen}
++                isOpenKey={hasChildItemKey ? stableIsOpenKey : trackedIsOpenKey}
+                 itemKey={childKey}
++                preferProviderKeyForNestedItems={!hasExplicitExpandedKeys}
+                 onToggleKey={toggleExpand}
++                onToggleKeys={toggleExpandKeys}
+               >
+                 {child}
+               </AccordionItemStateProvider>
+diff --git a/src/Accordion/AccordionItem.tsx b/src/Accordion/AccordionItem.tsx
+index 589b7420..7623e350 100644
+--- a/src/Accordion/AccordionItem.tsx
++++ b/src/Accordion/AccordionItem.tsx
+@@ -186,6 +186,7 @@ AccordionItemContent.displayName = 'AccordionItemContent';
+
+ const AccordionItem = memo<AccordionItemProps>(
+   ({
++    itemKey,
+     title,
+     children,
+     action,
+@@ -237,8 +238,17 @@ const AccordionItem = memo<AccordionItemProps>(
+       isInitialRenderRef.current = false;
+     }, []);
+
++    const isDirectContextItem = itemStateContext?.itemKey === itemKey;
++
+     // Determine expanded state
+-    const isOpen = isStandalone ? isExpandedStandalone : (itemStateContext?.isOpen ?? false);
++    let isOpen = false;
++    if (isStandalone) {
++      isOpen = isExpandedStandalone;
++    } else if (itemStateContext) {
++      isOpen = isDirectContextItem
++        ? itemStateContext.isOpen
++        : itemStateContext.isOpen || itemStateContext.isOpenKey(itemKey);
++    }
+
+     // Determine other props with fallbacks
+     const hideIndicatorFinal = itemHideIndicator ?? contextHideIndicator ?? false;
+@@ -247,7 +257,14 @@ const AccordionItem = memo<AccordionItemProps>(
+     const disableAnimation = contextDisableAnimation ?? false;
+     const variant = customVariant || contextVariant;
+
+-    const contextOnToggle = itemStateContext?.onToggle;
++    const contextOnToggle = useCallback(() => {
++      if (!itemStateContext) return;
++      if (itemStateContext.itemKey === itemKey) {
++        itemStateContext.onToggle();
++        return;
++      }
++      itemStateContext.onToggleNestedKey(itemKey);
++    }, [itemStateContext, itemKey]);
+
+     const handleToggle = useCallback(() => {
+       // If allowExpand is false, only allow controlled expansion via expand prop
+diff --git a/src/Accordion/context.tsx b/src/Accordion/context.tsx
+index c7816171..0722144a 100644
+--- a/src/Accordion/context.tsx
++++ b/src/Accordion/context.tsx
+@@ -3,7 +3,11 @@ import { createContext, memo, use, useMemo } from 'react';
+
+ interface AccordionItemStateValue {
+   isOpen: boolean;
++  isOpenKey: (key: Key) => boolean;
++  itemKey: Key;
+   onToggle: () => void;
++  onToggleKey: (key: Key) => void;
++  onToggleNestedKey: (key: Key) => void;
+ }
+
+ interface AccordionConfigValue {
+@@ -35,23 +39,44 @@ export const useAccordionConfig = () => use(AccordionConfigContext);
+ interface AccordionItemStateProviderProps {
+   children: ReactNode;
+   isOpen: boolean;
++  isOpenKey: (key: Key) => boolean;
+   itemKey: Key;
+   onToggleKey: (key: Key) => void;
++  onToggleKeys: (keys: Key[], preferredKey: Key) => void;
++  preferProviderKeyForNestedItems: boolean;
+ }
+
+ export const AccordionItemStateProvider = memo<AccordionItemStateProviderProps>(
+-  ({ children, isOpen, itemKey, onToggleKey }) => {
++  ({
++    children,
++    isOpenKey,
++    isOpen,
++    itemKey,
++    onToggleKey,
++    onToggleKeys,
++    preferProviderKeyForNestedItems,
++  }) => {
+     const value = useMemo(
+       () => ({
++        isOpenKey,
+         isOpen,
++        itemKey,
+         onToggle: () => onToggleKey(itemKey),
++        onToggleKey,
++        onToggleNestedKey: (key: Key) =>
++          onToggleKeys([itemKey, key], preferProviderKeyForNestedItems ? itemKey : key),
+       }),
+-      [isOpen, itemKey, onToggleKey],
++      [
++        isOpenKey,
++        isOpen,
++        itemKey,
++        onToggleKey,
++        onToggleKeys,
++        preferProviderKeyForNestedItems,
++      ],
+     );
+     return <AccordionItemStateContext value={value}>{children}</AccordionItemStateContext>;
+   },
+-  (prevProps, nextProps) =>
+-    prevProps.itemKey === nextProps.itemKey && prevProps.onToggleKey === nextProps.onToggleKey,
+ );
+
+ AccordionItemStateProvider.displayName = 'AccordionItemStateProvider';
