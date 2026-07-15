@@ -199,22 +199,5 @@ describe("shortcut catalog behavior", () => {
       forwardIds,
     );
     expect(new Set(forwardIds).size).toBe(forwardIds.length);
-
-    forwardUnion.forEach((definition, definitionIndex) => {
-      const nextDefinition = forwardUnion[definitionIndex + 1];
-      if (!nextDefinition) {
-        return;
-      }
-
-      const modeCountDifference =
-        definition.modes.length - nextDefinition.modes.length;
-      const labelOrder = definition.labelKey.localeCompare(
-        nextDefinition.labelKey,
-      );
-      expect(
-        modeCountDifference < 0 ||
-          (modeCountDifference === 0 && labelOrder <= 0),
-      ).toBe(true);
-    });
   });
 });

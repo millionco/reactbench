@@ -37,7 +37,17 @@ RD_SCAN_FLAGS="$RD_GATE_SCAN_FLAGS"
 if [ "$RD_MODE" = "health" ]; then
   RD_SCAN_FLAGS="--lint $RD_SCAN_FLAGS"
 fi
-DO_NOT_TRACK=1 REACT_DOCTOR_CACHE_DIR=/opt/rd-cache react-doctor $RD_SCAN_FLAGS \
+# Mirror the grader's buildRdEnv (grader.mjs): cap RD's worker pool so oxlint
+# doesn't over-spawn ~1 GiB workers and OOM the build, and raise the lint/scan
+# deadlines above RD 0.7.8's 300s default so a large cold baseline (e.g. appflowy,
+# 1806 files ~355s) completes lint instead of baking a partial the guard rejects.
+# These are ceilings — small bakes finish in seconds and are unaffected.
+DO_NOT_TRACK=1 REACT_DOCTOR_CACHE_DIR=/opt/rd-cache \
+  REACT_DOCTOR_PARALLEL=4 RAYON_NUM_THREADS=2 \
+  REACT_DOCTOR_OXLINT_SPAWN_TIMEOUT_MS=600000 \
+  REACT_DOCTOR_LINT_PHASE_TIMEOUT_MS=1800000 \
+  REACT_DOCTOR_SCAN_DEADLINE_MS=1800000 \
+  react-doctor $RD_SCAN_FLAGS \
   --json --json-compact "$SCAN_ROOT" > /opt/rd-baseline.json 2>/dev/null || true
 
 node - /opt/rd-baseline.json <<'NODE'
