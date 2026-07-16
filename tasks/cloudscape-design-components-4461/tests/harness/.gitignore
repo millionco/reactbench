@@ -1,0 +1,8 @@
+node_modules/
+.pnpm-store/
+.vite/
+.vite-cache/
+.ssr-markup.html
+test-results/
+playwright-report/
+coverage/
