@@ -13,10 +13,15 @@ export const ProgressStepContent = () => (
   <div data-testid="progress-content">Validating credentials</div>
 );
 
+export const ReviewStepContent = () => (
+  <div data-testid="review-content">Review credentials</div>
+);
+
 export const wizardMapper = {
   [componentTypes.TEXT_FIELD]: TextField,
   [componentTypes.WIZARD]: Wizard,
   "progress-step-content": ProgressStepContent,
+  "review-step-content": ReviewStepContent,
 };
 
 export const progressAfterSubmissionSchema = {
@@ -94,8 +99,58 @@ export const ordinaryFinalSubmitSchema = {
   ],
 };
 
+export const conditionalProgressAfterSubmissionSchema = {
+  fields: [
+    {
+      component: componentTypes.WIZARD,
+      name: "conditional-progress-wizard",
+      title: "Conditional progress after submission",
+      fields: [
+        {
+          title: "Choose route",
+          name: "route-step",
+          nextStep: ({ values }: { values: Record<string, unknown> }) =>
+            values.route === "progress" ? "progress-step" : "review-step",
+          fields: [
+            {
+              component: componentTypes.TEXT_FIELD,
+              name: "route",
+              label: "Route",
+              isRequired: true,
+              validate: [{ type: validatorTypes.REQUIRED }],
+            },
+          ],
+        },
+        {
+          title: "Review",
+          name: "review-step",
+          fields: [
+            {
+              name: "review-content",
+              component: "review-step-content",
+            },
+          ],
+        },
+        {
+          name: "progress-step",
+          isProgressAfterSubmissionStep: true,
+          fields: [
+            {
+              name: "progress-content",
+              component: "progress-step-content",
+            },
+          ],
+        },
+      ],
+    },
+  ],
+};
+
 interface WizardFormProps {
-  schema: typeof progressAfterSubmissionSchema;
+  schema:
+    | typeof progressAfterSubmissionSchema
+    | typeof ordinaryFinalSubmitSchema
+    | typeof conditionalProgressAfterSubmissionSchema;
   onSubmit?: (values: Record<string, unknown>) => void;
   onCancel?: () => void;
 }

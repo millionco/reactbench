@@ -1,6 +1,6 @@
 {
   "rd": {
-    "scan_root": "/app/packages/pf4-component-mapper"
+    "scan_root": "/app"
   },
   "verifier_timeout_sec": 600,
   "test": {

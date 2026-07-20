@@ -30,7 +30,7 @@ index 48d122b7..c7592d7e 100644
  export const CNavGroup: PolymorphicRefForwardingComponent<'li', CNavGroupProps> = forwardRef<
    HTMLDivElement | HTMLLIElement,
    CNavGroupProps
-@@ -75,70 +72,100 @@ export const CNavGroup: PolymorphicRefForwardingComponent<'li', CNavGroupProps>
+@@ -75,70 +72,88 @@ export const CNavGroup: PolymorphicRefForwardingComponent<'li', CNavGroupProps>
      ref
    ) => {
      const id = useId()
@@ -39,8 +39,6 @@ index 48d122b7..c7592d7e 100644
 
 -    const navContext = useContext(CSidebarNavContext)
 -    const setOpenChain = navContext?.setOpenChain
-+    // Accordion of the parent level: lets this group read whether it is the open one and request
-+    // its own open/close. `null` when rendered outside a `CSidebarNav`.
 +    const parentContext = useContext(CNavGroupContext)
 +    const parentContextRef = useRef(parentContext)
 +    parentContextRef.current = parentContext
@@ -50,8 +48,6 @@ index 48d122b7..c7592d7e 100644
      const navItemsRef = useRef<any>(null)
 
      const [uncontrolledVisible, setUncontrolledVisible] = useState(Boolean(visible))
-+    // This group's own accordion state for its children. It survives the group being collapsed,
-+    // so reopening the group restores whichever child was previously open.
 +    const [activeChildId, setActiveChildId] = useState<string | undefined>()
 +    const previousVisibleRef = useRef(visible)
 +    const wasShownRef = useRef(false)
@@ -66,11 +62,9 @@ index 48d122b7..c7592d7e 100644
 +        ? parentContext.activeId === id
          : uncontrolledVisible
 
-     // Sync the accordion with the `visible` prop: seeds default-open groups and follows later
+-    // Sync the accordion with the `visible` prop: seeds default-open groups and follows later
 -    // changes (and keeps controlled groups in sync). `setOpenChain` is stable, so this does not
 -    // re-run on unrelated accordion updates—letting a default-open group be collapsed manually.
-+    // changes (and keeps controlled groups in sync). Watching only `visible` keeps this from
-+    // re-running on unrelated accordion updates—so a default-open group can be collapsed manually.
      useEffect(() => {
 -      if (!setOpenChain || visible === undefined) {
 +      if (visible === undefined) {
@@ -98,8 +92,6 @@ index 48d122b7..c7592d7e 100644
 +    }, [visible, id])
 
 -    // Standalone (no sidebar): mirror the `visible` prop into local state.
-+    // Accordion: when another branch opens, a controlled group must close too. As its visibility
-+    // is owned by the parent, request the change through `onVisibleChange`.
      useEffect(() => {
 -      if (navContext || visible === undefined) {
 +      if (!controlled || !visible) {
@@ -118,8 +110,6 @@ index 48d122b7..c7592d7e 100644
 -    // visibility is owned by the parent, request the change through `onVisibleChange`.
 -    useEffect(() => {
 -      if (!controlled || !navContext || !visible) {
-+    // Open this group within its parent level and cascade up to the root, revealing the whole
-+    // branch. Used by an active nav link and by nested groups to bubble the request upwards.
 +    const openBranch = useCallback(() => {
 +      const parent = parentContextRef.current
 +      if (!parent) {
@@ -132,7 +122,6 @@ index 48d122b7..c7592d7e 100644
 +      parent.setActiveId(id)
 +    }, [id])
 +
-+    // Drop nested open state when this group transitions from open to closed.
 +    useEffect(() => {
 +      if (wasShownRef.current && !_visible) {
 +        setActiveChildId(undefined)
@@ -171,37 +160,21 @@ diff --git a/packages/coreui-react/src/components/nav/CNavGroupContext.ts b/pack
 index d16130be..3b3408bc 100644
 --- a/packages/coreui-react/src/components/nav/CNavGroupContext.ts
 +++ b/packages/coreui-react/src/components/nav/CNavGroupContext.ts
-@@ -1,8 +1,27 @@
+@@ -1,8 +1,9 @@
 -import { createContext } from 'react'
 +import { createContext, Dispatch, SetStateAction } from 'react'
 +
 +export interface CNavGroupContextValue {
-+  /**
-+   * The id of the currently open child group at this level, or `undefined` when none is open.
-+   * Each `CNavGroup` keeps its own accordion state, so collapsing an ancestor never discards the
-+   * open/closed state of its descendants—reopening the ancestor restores them.
-+   */
 +  activeId: string | undefined
-+  /**
-+   * Open (or, with `undefined`, close) a child group at this level. Opening a group collapses its
-+   * siblings, mirroring the vanilla `groupsAutoCollapse` behavior.
-+   */
 +  setActiveId: Dispatch<SetStateAction<string | undefined>>
-+  /**
-+   * Open the whole branch from the parent group up to the root. Used by an active nav link to
-+   * reveal every ancestor group.
-+   */
 +  openBranch: () => void
 +}
 
- /**
+-/**
 - * The chain of stable ids of the ancestor nav groups, from the root nav down to (and
 - * including) the closest parent `CNavGroup`. An empty array means the consumer is rendered
 - * directly under `CSidebarNav`, with no parent group.
-+ * Provides the per-level accordion state to the direct children (`CNavGroup`, `CNavLink`) of a
-+ * `CSidebarNav` or a parent `CNavGroup`. `null` means the consumer is rendered outside a sidebar
-+ * navigation, in which case groups fall back to their own local state.
-  */
+- */
 -export const CNavGroupContext = createContext<string[]>([])
 +export const CNavGroupContext = createContext<CNavGroupContextValue | null>(null)
 diff --git a/packages/coreui-react/src/components/nav/CNavLink.tsx b/packages/coreui-react/src/components/nav/CNavLink.tsx

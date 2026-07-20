@@ -1,8 +1,44 @@
 diff --git a/src/calendar.tsx b/src/calendar.tsx
-index 4bedbdc0..d121c59e 100644
+index 4bedbdc0..13b91d94 100644
 --- a/src/calendar.tsx
 +++ b/src/calendar.tsx
-@@ -1091,7 +1091,7 @@ export default class Calendar extends Component<CalendarProps, CalendarState> {
+@@ -199,8 +199,8 @@ type CalendarProps = React.PropsWithChildren<
+       onSelect: (
+         day: Date,
+         event?:
+-          | React.MouseEvent<HTMLDivElement>
+-          | React.KeyboardEvent<HTMLDivElement>,
++          | React.MouseEvent<HTMLElement>
++          | React.KeyboardEvent<HTMLElement>,
+         monthSelectedIn?: number,
+       ) => void;
+       renderCustomHeader?: (
+@@ -896,7 +896,7 @@ export default class Calendar extends Component<CalendarProps, CalendarState> {
+     );
+   };
+ 
+-  handleTodayButtonClick = (event: React.MouseEvent<HTMLDivElement>): void => {
++  handleTodayButtonClick = (event: React.MouseEvent<HTMLButtonElement>): void => {
+     this.props.onSelect(getStartOfToday(), event);
+     this.props.setPreSelection && this.props.setPreSelection(getStartOfToday());
+   };
+@@ -906,12 +906,13 @@ export default class Calendar extends Component<CalendarProps, CalendarState> {
+       return;
+     }
+     return (
+-      <div
++      <button
++        type="button"
+         className="react-datepicker__today-button"
+         onClick={this.handleTodayButtonClick}
+       >
+         {this.props.todayButton}
+-      </div>
++      </button>
+     );
+   };
+ 
+@@ -1091,9 +1092,10 @@ export default class Calendar extends Component<CalendarProps, CalendarState> {
          this.props.showMonthYearPicker || this.props.showQuarterYearPicker
            ? addYears(fromMonthDate, monthsToAdd)
            : addMonths(fromMonthDate, monthsToAdd);
@@ -10,4 +46,31 @@ index 4bedbdc0..d121c59e 100644
 +      const monthKey = `month-${monthDate.getFullYear()}-${monthDate.getMonth()}`;
        const monthShowsDuplicateDaysEnd = i < monthsShown - 1;
        const monthShowsDuplicateDaysStart = i > 0;
++      const monthHeaderPosition = this.props.monthHeaderPosition;
        monthList.push(
+         <div
+           key={monthKey}
+@@ -1102,7 +1104,7 @@ export default class Calendar extends Component<CalendarProps, CalendarState> {
+           }}
+           className="react-datepicker__month-container"
+         >
+-          {this.props.monthHeaderPosition === "top" &&
++          {monthHeaderPosition === "top" &&
+             this.renderHeader({ monthDate, i })}
+           <Month
+             {...Calendar.defaultProps}
+@@ -1121,12 +1123,12 @@ export default class Calendar extends Component<CalendarProps, CalendarState> {
+             monthShowsDuplicateDaysStart={monthShowsDuplicateDaysStart}
+             dayNamesHeader={this.renderDayNamesHeader(monthDate, i)}
+             monthHeader={
+-              this.props.monthHeaderPosition === "middle"
++              monthHeaderPosition === "middle"
+                 ? this.renderHeader({ monthDate, i })
+                 : undefined
+             }
+             monthFooter={
+-              this.props.monthHeaderPosition === "bottom"
++              monthHeaderPosition === "bottom"
+                 ? this.renderHeader({ monthDate, i })
+                 : undefined
+             }

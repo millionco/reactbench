@@ -2,6 +2,7 @@
 import * as React from "react";
 import {
   WizardForm,
+  conditionalProgressAfterSubmissionSchema,
   ordinaryFinalSubmitSchema,
   progressAfterSubmissionSchema,
 } from "./wizard-fixtures";
@@ -31,6 +32,14 @@ export const Playground = () => {
       <section data-testid="ordinary-final-submit" style={{ marginTop: 48 }}>
         <h2>Ordinary final submit</h2>
         <WizardForm schema={ordinaryFinalSubmitSchema} onSubmit={handleOrdinarySubmit} />
+      </section>
+
+      <section data-testid="conditional-progress" style={{ marginTop: 48 }}>
+        <h2>Conditional progress</h2>
+        <WizardForm
+          schema={conditionalProgressAfterSubmissionSchema}
+          onSubmit={handleProgressSubmit}
+        />
       </section>
     </div>
   );

@@ -120,15 +120,21 @@ test.describe("resizable production tables", () => {
     if (!dividerBox) {
       throw new Error("Expected visible requirements divider");
     }
-    await divider.dispatchEvent("mousedown", {
+    const resizeStartEvent = {
       button: 0,
       clientX: 100,
       clientY: dividerBox.y + dividerBox.height / 2,
-    });
+    };
+    await divider.dispatchEvent("pointerdown", resizeStartEvent);
+    await divider.dispatchEvent("mousedown", resizeStartEvent);
     await page.evaluate(() => {
+      document.dispatchEvent(
+        new PointerEvent("pointermove", { bubbles: true, clientX: 196 }),
+      );
       document.dispatchEvent(
         new MouseEvent("mousemove", { bubbles: true, clientX: 196 }),
       );
+      document.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
       document.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
     });
 

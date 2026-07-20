@@ -18,6 +18,7 @@ const HARNESS_DEPENDENCY_PREFIXES = [
   "react",
   "react-dom",
   "react-markdown",
+  "rehype-raw",
   "remark-gfm",
   "remark-math",
 ];

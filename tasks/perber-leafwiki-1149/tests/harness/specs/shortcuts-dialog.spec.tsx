@@ -110,4 +110,36 @@ describe("shortcuts help dialog behavior", () => {
     expect(screen.queryByText("Confirm rename")).not.toBeInTheDocument();
     expect(screen.queryByText("Cancel rename")).not.toBeInTheDocument();
   });
+
+  it("renders combined shortcuts once in deterministic order", () => {
+    render(
+      <MemoryRouter initialEntries={["/history/docs/getting-started"]}>
+        <ShortcutsDialog />
+      </MemoryRouter>,
+    );
+
+    const dialogQueries = within(screen.getByTestId("shortcuts-help-dialog"));
+    const expectedActionLabels = [
+      "Back to page",
+      "Close dialog",
+      "Dialog default action",
+      "Open explorer",
+      "Open keyboard shortcuts",
+      "Open search",
+    ];
+    const actionElements = expectedActionLabels.map((actionLabel) => {
+      expect(dialogQueries.getAllByText(actionLabel)).toHaveLength(1);
+      return dialogQueries.getByText(actionLabel);
+    });
+
+    for (const [actionIndex, actionElement] of actionElements.entries()) {
+      const nextActionElement = actionElements[actionIndex + 1];
+      if (nextActionElement) {
+        expect(
+          actionElement.compareDocumentPosition(nextActionElement) &
+            Node.DOCUMENT_POSITION_FOLLOWING,
+        ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+      }
+    }
+  });
 });

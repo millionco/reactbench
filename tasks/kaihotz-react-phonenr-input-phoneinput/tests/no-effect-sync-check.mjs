@@ -158,6 +158,21 @@ const directParentNotification = (text) =>
 const callsNotificationAlias = (text, aliases) =>
   [...aliases].some((name) => new RegExp(`\\b${escaped(name)}\\s*(?:\\?\\.)?\\s*\\(`).test(text));
 
+// A wrapper can alias the parent notifier by REFERENCE, not only by calling it:
+// `const notify = useEffectEvent(onChange)` / `useEffectEvent(onChangeRef.current)`.
+// The callback is a bare identifier, so directParentNotification/callsNotificationAlias
+// (which look for a `onChange(` call) never fire — but `notify(data)` inside a state-keyed
+// effect is still the same "notify parent from effect" anti-pattern. Treat the wrapper as
+// an alias so that call is caught.
+const isByReferenceNotification = (text, aliases) => {
+  const trimmed = text.trim();
+  return (
+    trimmed === "onChange" ||
+    aliases.has(trimmed) ||
+    /^onChange[A-Za-z0-9_$]*Ref\s*\.\s*current$/.test(trimmed)
+  );
+};
+
 const notificationAliases = new Set();
 let changed = true;
 while (changed) {
@@ -169,7 +184,9 @@ while (changed) {
     const [callback] = splitTopLevelArgs(source.slice(openIndex + 1, closeIndex));
     if (
       !notificationAliases.has(match[1]) &&
-      (directParentNotification(callback) || callsNotificationAlias(callback, notificationAliases))
+      (directParentNotification(callback) ||
+        callsNotificationAlias(callback, notificationAliases) ||
+        isByReferenceNotification(callback, notificationAliases))
     ) {
       notificationAliases.add(match[1]);
       changed = true;

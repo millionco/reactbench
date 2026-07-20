@@ -4,7 +4,7 @@
 version = "1.0"
 
 [[artifacts]]
-source = "/app"
+source = "/app/packages/coreui-react/src"
 destination = "agent-src"
 exclude = [
   "**/node_modules/**",

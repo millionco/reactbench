@@ -148,7 +148,7 @@ index cdacb1f4..9d8a7524 100644
    },
 +  {
 +    id: 'shortcuts.help.open',
-+    labelKey: 'shortcutsHelp.items.openShortcutsHelp.action',
++    labelKey: 'shortcutsHelp.items.openKeyboardShortcuts.action',
 +    categoryKey: 'shortcutsHelp.categories.navigation',
 +    keyCombo: 'Mod+Slash',
 +    defaultDisplayLabel: 'Ctrl+/',
@@ -235,7 +235,7 @@ index dc922ec2..a652aad6 100644
        "goToPage": {
          "action": "Go to page"
        },
-+      "openShortcutsHelp": {
++      "openKeyboardShortcuts": {
 +        "action": "Open keyboard shortcuts"
 +      },
        "editPage": {

@@ -3,6 +3,7 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { Decisions } from "@app/pages/Decisions";
+import "@app/index.css";
 
 class BrowserIntersectionObserver {
   observe() {}

@@ -44,9 +44,9 @@ test("retains a delivery error until retry success is confirmed", async ({
   });
 
   await allowButton.click();
-  await expect(page.getByRole("alert")).toContainText("Couldn't deliver");
+  await expect(page.getByRole("alert")).toContainText(/couldn't deliver/i);
   await allowButton.click();
-  await expect(page.getByRole("alert")).toContainText("Couldn't deliver");
+  await expect(page.getByRole("alert")).toContainText(/couldn't deliver/i);
   await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(allowButton).toBeVisible();
 });
