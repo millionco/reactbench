@@ -1,37 +1,257 @@
 diff --git a/client/src/components/pipeline/editorial/CheckKindBadge.jsx b/client/src/components/pipeline/editorial/CheckKindBadge.jsx
-index fe3d8920e..94dd461d9 100644
---- a/client/src/components/pipeline/editorial/CheckKindBadge.jsx
+new file mode 100644
+index 00000000..2be6c40c
+--- /dev/null
 +++ b/client/src/components/pipeline/editorial/CheckKindBadge.jsx
-@@ -15,7 +15,7 @@ const KIND_BADGE = {
- function CheckKindBadge({ kind, className = '' }) {
-   return (
-     <span className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border ${KIND_BADGE[kind] || KIND_BADGE.deterministic} ${className}`}>
--      {kind === 'llm' ? 'AI' : 'rule'}
-+      {kind === 'llm' ? 'LLM' : 'rule'}
-     </span>
-   );
- }
+@@ -0,0 +1,24 @@
++import { memo } from 'react';
++
++const KIND_BADGE = {
++  deterministic: {
++    label: 'Rule',
++    className: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
++  },
++  llm: {
++    label: 'LLM',
++    className: 'bg-purple-500/15 text-purple-300 border-purple-500/30',
++  },
++};
++
++const CheckKindBadge = ({ kind, className = '' }) => {
++  const badge = KIND_BADGE[kind];
++  if (!badge) return null;
++  return (
++    <span className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border ${badge.className} ${className}`}>
++      {badge.label}
++    </span>
++  );
++};
++
++export default memo(CheckKindBadge);
+diff --git a/client/src/components/pipeline/editorial/EditorialCheckCard.jsx b/client/src/components/pipeline/editorial/EditorialCheckCard.jsx
+index 2bcc7f2a..d18cb44c 100644
+--- a/client/src/components/pipeline/editorial/EditorialCheckCard.jsx
++++ b/client/src/components/pipeline/editorial/EditorialCheckCard.jsx
+@@ -19,11 +19,7 @@
+ import { memo, useEffect, useState } from 'react';
+ import { ChevronDown, ChevronRight, Loader2, Pencil, Sliders, Trash2 } from 'lucide-react';
+ import ToggleSwitch from '../../ToggleSwitch';
+-
+-const KIND_BADGE = {
+-  deterministic: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
+-  llm: 'bg-purple-500/15 text-purple-300 border-purple-500/30',
+-};
++import CheckKindBadge from './CheckKindBadge';
+ const SEVERITY_BADGE = {
+   high: 'bg-rose-500/15 text-rose-300',
+   medium: 'bg-amber-500/15 text-amber-300',
+@@ -107,9 +103,7 @@ function EditorialCheckCard({
+         <div className="min-w-0 space-y-1">
+           <div className="flex flex-wrap items-center gap-1.5">
+             <span className="text-sm font-medium text-gray-100">{check.label}</span>
+-            <span className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border ${KIND_BADGE[check.kind] || KIND_BADGE.deterministic}`}>
+-              {check.kind === 'llm' ? 'AI' : 'rule'}
+-            </span>
++            <CheckKindBadge kind={check.kind} />
+             <span className={`text-[10px] px-1.5 py-0.5 rounded ${SEVERITY_BADGE[check.severityDefault] || SEVERITY_BADGE.low}`}>
+               {check.severityDefault}
+             </span>
+diff --git a/client/src/components/pipeline/editorial/EditorialFindingsTriage.jsx b/client/src/components/pipeline/editorial/EditorialFindingsTriage.jsx
+index 6ea237c1..a594f405 100644
+--- a/client/src/components/pipeline/editorial/EditorialFindingsTriage.jsx
++++ b/client/src/components/pipeline/editorial/EditorialFindingsTriage.jsx
+@@ -15,8 +15,9 @@
+  * bulk-dismisses the selection — each result reactively updates local state.
+  */
+ import { Link, useSearchParams } from 'react-router-dom';
+-import { ChevronDown, ChevronRight, ExternalLink, History, Check, X, Loader2, GitCompareArrows, Search, Ban, Undo2 } from 'lucide-react';
+-import { useEffect, useMemo, useRef, useState } from 'react';
++import { ChevronDown, ChevronRight, ExternalLink, History, Check, X, Loader2, GitCompareArrows, Search, Ban, Undo2, Info } from 'lucide-react';
++import { useEffect, useId, useMemo, useRef, useState } from 'react';
++import CheckKindBadge from './CheckKindBadge';
+ import {
+   groupFindingsByCheck,
+   findingManuscriptLink,
+@@ -24,6 +25,7 @@ import {
+   deriveFindingFacets,
+   applyFindingsView,
+   normalizeFindingSort,
++  editorialCheckRow,
+   FINDING_SORT_OPTIONS,
+ } from '../../../lib/editorialChecks';
+ import { fixEditsOf, selectedEditsFor } from '../manuscript/ManuscriptCommentCard';
+@@ -239,9 +241,9 @@ function FindingRow({ seriesId, comment, onCommentChange, selected, onToggleSele
+ // default collapse derives from `group.open > 0`, so a status/search filter that
+ // matches only resolved findings (open === 0) would otherwise hide its matches
+ // behind a collapsed header and make the filtered view look empty.
+-function CheckGroup({ seriesId, group, onCommentChange, selectedIds, onToggleSelect, onSelectMany, forceOpen = false, canDisable = false, onDisableCheck }) {
++function CheckGroup({ seriesId, group, onCommentChange, selectedIds, onToggleSelect, onSelectMany, forceOpen = false, canDisable = false, onDisableCheck, isExpanded = false, onToggleExpanded, isDescriptionVisible = false, onToggleDescription }) {
++  const descriptionId = useId();
+-  const [open, setOpen] = useState(group.open > 0);
+-  const expanded = forceOpen || open;
++  const expanded = forceOpen || isExpanded;
+   const openIds = useMemo(
+     () => group.comments.filter(isOpenFinding).map((c) => c.id),
+     [group.comments],
+@@ -261,7 +263,7 @@ function CheckGroup({ seriesId, group, onCommentChange, selectedIds, onToggleSel
+         ) : null}
+         <button
+           type="button"
+-          onClick={() => setOpen((v) => !v)}
++          onClick={onToggleExpanded}
+           disabled={forceOpen}
+           className="flex min-w-0 flex-1 items-center justify-between gap-2 text-left disabled:cursor-default"
+           aria-expanded={expanded}
+@@ -269,6 +271,7 @@ function CheckGroup({ seriesId, group, onCommentChange, selectedIds, onToggleSel
+           <span className="flex items-center gap-1.5 min-w-0">
+             {expanded ? <ChevronDown size={14} className="shrink-0" /> : <ChevronRight size={14} className="shrink-0" />}
+             <span className="text-sm font-medium text-gray-100 truncate">{group.label}</span>
++            {group.kind ? <CheckKindBadge kind={group.kind} className="shrink-0" /> : null}
+             <span className="text-[10px] text-gray-500 shrink-0">{group.open} open · {group.total} total</span>
+           </span>
+           <span className="flex items-center gap-1.5 shrink-0">
+@@ -276,6 +279,23 @@ function CheckGroup({ seriesId, group, onCommentChange, selectedIds, onToggleSel
+             <CountPills counts={group.counts} />
+           </span>
+         </button>
++        {group.description ? (
++          <button
++            type="button"
++            onClick={onToggleDescription}
++            aria-expanded={isDescriptionVisible}
++            aria-controls={descriptionId}
++            aria-label={`${isDescriptionVisible ? 'Hide' : 'Show'} description for ${group.label}`}
++            title="Show what this check looks for"
++            className={`inline-flex shrink-0 items-center rounded border px-1.5 py-0.5 text-[10px] ${
++              isDescriptionVisible
++                ? 'border-port-accent/50 text-port-accent'
++                : 'border-port-border text-gray-500 hover:border-port-accent/40 hover:text-gray-200'
++            }`}
++          >
++            <Info size={11} />
++          </button>
++        ) : null}
+         {canDisable && onDisableCheck ? (
+           // Mute a noisy/false-positive check without leaving the triage view
+           // (#1602): disables it (skipped on future runs) and hides its findings
+@@ -292,6 +312,11 @@ function CheckGroup({ seriesId, group, onCommentChange, selectedIds, onToggleSel
+           </button>
+         ) : null}
+       </div>
++      {isDescriptionVisible && group.description ? (
++        <p id={descriptionId} className="border-t border-port-border/60 px-2.5 py-2 text-[11px] leading-relaxed text-gray-400">
++          {group.description}
++        </p>
++      ) : null}
+       {expanded ? (
+         <ul className="divide-y divide-port-border/60 border-t border-port-border/60">
+           {group.comments.map((c) => (
+@@ -516,6 +541,38 @@ function FindingsToolbar({ facets, filters, sort, setParam, toggleInParam, onCle
+ export default function EditorialFindingsTriage({ seriesId, comments = [], checksById = {}, onCommentChange, onToggleCheckEnabled }) {
+   const groups = useMemo(() => groupFindingsByCheck(comments, checksById), [comments, checksById]);
+   const [selectedIds, setSelectedIds] = useState(() => new Set());
++  const [visibleDescriptions, setVisibleDescriptions] = useState(() => new Map());
++  const [groupExpansion, setGroupExpansion] = useState(() => new Map());
++
++  const isGroupExpanded = (group) => {
++    const savedExpansion = groupExpansion.get(group.checkId);
++    return savedExpansion?.seriesId === seriesId ? savedExpansion.expanded : group.open > 0;
++  };
++
++  const toggleGroupExpanded = (group) => setGroupExpansion((currentExpansion) => {
++    const nextExpansion = new Map(currentExpansion);
++    const savedExpansion = currentExpansion.get(group.checkId);
++    const isExpanded = savedExpansion?.seriesId === seriesId
++      ? savedExpansion.expanded
++      : group.open > 0;
++    nextExpansion.set(group.checkId, {
++      seriesId,
++      expanded: !isExpanded,
++    });
++    return nextExpansion;
++  });
++
++  const toggleDescription = (group) => setVisibleDescriptions((currentDescriptions) => {
++    const nextDescriptions = new Map(currentDescriptions);
++    const currentDescription = nextDescriptions.get(group.checkId);
++    if (currentDescription?.seriesId === seriesId
++      && currentDescription?.description === group.description) {
++      nextDescriptions.delete(group.checkId);
++    } else {
++      nextDescriptions.set(group.checkId, { seriesId, description: group.description });
++    }
++    return nextDescriptions;
++  });
+
+   // Checks the user muted from this view this session (#1602). Disabling a check
+   // doesn't delete its persisted findings, so the group is hidden locally until an
+@@ -559,7 +616,7 @@ export default function EditorialFindingsTriage({ seriesId, comments = [], check
+       if (!s.size) return s;
+       let changed = false;
+       const next = new Set();
+-      s.forEach((id) => { if (checksById[id]?.enabled === false) next.add(id); else changed = true; });
++      s.forEach((id) => { if (editorialCheckRow(checksById, id)?.enabled === false) next.add(id); else changed = true; });
+       return changed ? next : s;
+     });
+   }, [checksById]);
+@@ -697,7 +754,12 @@ export default function EditorialFindingsTriage({ seriesId, comments = [], check
+           seriesId={seriesId}
+           group={g}
+           onCommentChange={onCommentChange}
+-          canDisable={!!onToggleCheckEnabled && checksById[g.checkId]?.enabled === true}
++          isExpanded={isGroupExpanded(g)}
++          onToggleExpanded={() => toggleGroupExpanded(g)}
++          isDescriptionVisible={visibleDescriptions.get(g.checkId)?.seriesId === seriesId
++            && visibleDescriptions.get(g.checkId)?.description === g.description}
++          onToggleDescription={() => toggleDescription(g)}
++          canDisable={!!onToggleCheckEnabled && editorialCheckRow(checksById, g.checkId)?.enabled === true}
+           onDisableCheck={disableCheck}
+           selectedIds={selectedIds}
+           onToggleSelect={toggleSelect}
 diff --git a/client/src/lib/editorialChecks.js b/client/src/lib/editorialChecks.js
-index d38283694..c6adfd4a9 100644
+index 3bd37d77..12c2589b 100644
 --- a/client/src/lib/editorialChecks.js
 +++ b/client/src/lib/editorialChecks.js
-@@ -58,10 +58,13 @@ export function groupFindingsByCheck(comments = [], rowsById = {}) {
+@@ -40,11 +40,15 @@ export function groupChecksByScope(checks = []) {
+
+ const emptyCounts = () => ({ high: 0, medium: 0, low: 0 });
+
++export const editorialCheckRow = (rowsById, checkId) => (
++  rowsById instanceof Map ? rowsById.get(checkId) : rowsById?.[checkId]
++) || null;
++
+ /**
+  * Group review comments that came from an editorial check into per-check
+  * sections for the triage view. Only comments carrying a `checkId` are
+  * included (completeness findings have none). Returns
+- *   `[{ checkId, label, scope, kind, comments, open, total, counts, stale }]`
++ *   `[{ checkId, label, description, scope, kind, comments, open, total, counts, stale }]`
+  * ordered by the catalog's scope order then label, with `counts` tallying the
+  * OPEN comments by severity and `stale` counting the OPEN findings whose
+  * analyzed content has drifted since the check ran (#1345). `rowsById` is a
+@@ -52,15 +56,18 @@ const emptyCounts = () => ({ high: 0, medium: 0, low: 0 });
+  * the check is currently disabled.
+  */
+ export function groupFindingsByCheck(comments = [], rowsById = {}) {
+-  const lookup = new Map(Object.entries(rowsById || {}));
+   const groups = new Map();
+   for (const c of comments) {
      if (!c?.checkId) continue;
      if (!groups.has(c.checkId)) {
-       const row = lookup.get(c.checkId) || null;
+-      const row = lookup.get(c.checkId) || null;
++      const row = editorialCheckRow(rowsById, c.checkId);
 +      const description = typeof row?.description === 'string' && row.description.trim()
 +        ? row.description
 +        : null;
        groups.set(c.checkId, {
          checkId: c.checkId,
          label: row?.label || c.checkId,
--        description: row?.description || null,
 +        description,
          scope: row?.scope || 'other',
          kind: row?.kind || null,
          comments: [],
 diff --git a/client/src/pages/PipelineEditorialChecks.jsx b/client/src/pages/PipelineEditorialChecks.jsx
-index 84139ed74..e443853d1 100644
+index 84139ed7..e443853d 100644
 --- a/client/src/pages/PipelineEditorialChecks.jsx
 +++ b/client/src/pages/PipelineEditorialChecks.jsx
 @@ -79,7 +79,7 @@ export default function PipelineEditorialChecks() {

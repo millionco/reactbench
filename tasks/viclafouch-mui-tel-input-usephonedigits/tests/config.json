@@ -1,6 +1,7 @@
 {
   "rd": {
-    "scan_root": "/app"
+    "scan_root": "/app",
+    "telemetry_only": true
   },
   "verifier_timeout_sec": 900,
   "test": {

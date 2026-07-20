@@ -70,10 +70,12 @@ storage_mb = 10240
 gpus = 0
 allow_internet = false
 
+# 8 GB: long-context agent sessions (mini-swe + kimi-k3) OOM'd the 4 GB sandbox
+# with exit 137 three times across two runs on 2026-07-17.
 [environment]
 build_timeout_sec = 2400.0
 cpus = 2
-memory_mb = 4096
+memory_mb = 8192
 storage_mb = 10240
 gpus = 0
 allow_internet = false

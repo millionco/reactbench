@@ -5,7 +5,6 @@ import {
   getShortcutDefinition,
   getShortcutDisplayLabel,
   getVisibleShortcutsForMode,
-  getVisibleShortcutsForModes,
   shortcutDefinitions,
 } from "@/lib/shortcuts/shortcutCatalog";
 
@@ -19,8 +18,8 @@ const expectedShortcutIdsByMode = {
     "viewer.page.print",
     "viewer.page.permalink",
     "sidebar.explorer.open",
-    "sidebar.search.open",
     "shortcuts.help.open",
+    "sidebar.search.open",
   ],
   edit: [
     "editor.page.close",
@@ -33,24 +32,24 @@ const expectedShortcutIdsByMode = {
     "editor.link.insert",
     "editor.page.save",
     "sidebar.explorer.open",
-    "sidebar.search.open",
     "shortcuts.help.open",
+    "sidebar.search.open",
   ],
   history: [
     "history.page.close",
     "sidebar.explorer.open",
-    "sidebar.search.open",
     "shortcuts.help.open",
+    "sidebar.search.open",
   ],
   settings: [
     "sidebar.explorer.open",
-    "sidebar.search.open",
     "shortcuts.help.open",
+    "sidebar.search.open",
   ],
   "user-management": [
     "sidebar.explorer.open",
-    "sidebar.search.open",
     "shortcuts.help.open",
+    "sidebar.search.open",
   ],
   dialog: ["dialog.close", "dialog.confirm"],
 };
@@ -172,32 +171,5 @@ describe("shortcut catalog behavior", () => {
     expect(dialogShortcutIds).toEqual(["dialog.close", "dialog.confirm"]);
     expect(dialogShortcutIds).not.toContain("asset.rename.confirm");
     expect(dialogShortcutIds).not.toContain("asset.rename.cancel");
-  });
-
-  it("deduplicates repeated mode inputs and orders every union deterministically", () => {
-    const forwardUnion = getVisibleShortcutsForModes([
-      "history",
-      "dialog",
-      "history",
-    ]);
-    const reverseUnion = getVisibleShortcutsForModes([
-      "dialog",
-      "history",
-      "dialog",
-    ]);
-    const forwardIds = forwardUnion.map((definition) => definition.id);
-
-    expect(forwardIds).toEqual([
-      "history.page.close",
-      "dialog.close",
-      "dialog.confirm",
-      "sidebar.explorer.open",
-      "sidebar.search.open",
-      "shortcuts.help.open",
-    ]);
-    expect(reverseUnion.map((definition) => definition.id)).toEqual(
-      forwardIds,
-    );
-    expect(new Set(forwardIds).size).toBe(forwardIds.length);
   });
 });

@@ -1,0 +1,79 @@
+diff --git a/tests/settingsModal.test.tsx b/tests/settingsModal.test.tsx
+index e8a2223..f55e21d 100644
+--- a/tests/settingsModal.test.tsx
++++ b/tests/settingsModal.test.tsx
+@@ -253,6 +253,74 @@ describe('SettingsModal', () => {
+     expect(getLatestConfig().customModels).toHaveLength(1);
+   });
+ 
++  it('refreshes the model draft when external config removes the selection', async () => {
++    const user = userEvent.setup();
++    const setConfig = vi.fn();
++    const firstConfig: AppConfig = {
++      ...DEFAULT_CONFIG,
++      customModels: [
++        {
++          id: 'custom-first',
++          name: 'first-model',
++          displayName: 'First Model',
++          provider: 'openai',
++        },
++        {
++          id: 'custom-second',
++          name: 'second-model',
++          displayName: 'Second Model',
++          provider: 'google',
++        },
++      ],
++    };
++    const secondConfig: AppConfig = {
++      ...DEFAULT_CONFIG,
++      customModels: [
++        {
++          id: 'custom-second',
++          name: 'second-model',
++          displayName: 'Second Model',
++          provider: 'google',
++        },
++      ],
++    };
++    const modal = render(
++      <SettingsModal
++        isOpen
++        onClose={vi.fn()}
++        config={firstConfig}
++        setConfig={setConfig}
++        effectiveConfig={firstConfig}
++        model="first-model"
++        onSetThinkingLevel={vi.fn()}
++        onSetRecursiveLoop={vi.fn()}
++      />,
++    );
++
++    await user.clear(screen.getByLabelText('Model ID'));
++    await user.click(screen.getByRole('button', { name: '保存配置' }));
++    expect(screen.getByRole('alert').textContent).toContain('Model ID 不能为空。');
++
++    modal.rerender(
++      <SettingsModal
++        isOpen
++        onClose={vi.fn()}
++        config={secondConfig}
++        setConfig={setConfig}
++        effectiveConfig={secondConfig}
++        model="second-model"
++        onSetThinkingLevel={vi.fn()}
++        onSetRecursiveLoop={vi.fn()}
++      />,
++    );
++
++    await waitFor(() => {
++      expect(screen.getByDisplayValue('second-model')).toBe(screen.getByLabelText('Model ID'));
++      expect(screen.getByDisplayValue('Second Model')).toBe(screen.getByLabelText('显示名称'));
++      expect(screen.queryByRole('alert')).toBeNull();
++    });
++  });
++
+   it('deletes user-created models from the redesigned model panel', async () => {
+     const user = userEvent.setup();
+     const { getLatestConfig } = renderStatefulModal({

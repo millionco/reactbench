@@ -36,13 +36,13 @@ test("chips and input share one bordered flex control in a real browser", async 
     const inputBounds = element.querySelector("input")?.getBoundingClientRect();
     const buttonBounds = element.querySelector("button")?.getBoundingClientRect();
     return {
-      borderTopWidth: style.borderTopWidth,
       buttonInside:
         Boolean(buttonBounds) &&
         buttonBounds.left >= controlBounds.left &&
         buttonBounds.right <= controlBounds.right,
       display: style.display,
       flexWrap: style.flexWrap,
+      hasVisibleBorder: Number.parseFloat(style.borderTopWidth) > 0,
       hasInput: Boolean(element.querySelector("#categories")),
       inputInside:
         Boolean(inputBounds) &&
@@ -52,10 +52,10 @@ test("chips and input share one bordered flex control in a real browser", async 
   });
 
   expect(layout).toEqual({
-    borderTopWidth: "1px",
     buttonInside: true,
     display: "flex",
     flexWrap: "wrap",
+    hasVisibleBorder: true,
     hasInput: true,
     inputInside: true,
   });

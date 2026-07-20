@@ -10,9 +10,9 @@ import {
 } from "./settings-fixtures";
 
 export const Playground = () => {
-  const [apiKeys, setApiKeys] = useState(settingsApiKeys);
   const [serverResult, setServerResult] = useState<unknown>(null);
   const creationCount = useRef(0);
+  const serverApiKeys = useRef(settingsApiKeys);
   const shouldFailNextCreation = useRef(false);
   const shouldDeferCreations = useRef(false);
   const deferredCreationResolvers = useRef<Array<() => void>>([]);
@@ -53,52 +53,57 @@ export const Playground = () => {
     }).then(setServerResult);
   }, []);
 
-  Reflect.set(window, "fetch", async () => {
-    if (shouldDeferCreations.current) {
-      await new Promise<void>((resolve) => {
-        deferredCreationResolvers.current.push(resolve);
-      });
-    }
-    if (shouldFailNextCreation.current) {
-      shouldFailNextCreation.current = false;
-      return new Response(JSON.stringify({}), {
-        headers: { "Content-Type": "application/json" },
-        status: 503,
-      });
-    }
-    creationCount.current += 1;
-    return new Response(
-      JSON.stringify({
-        apiKey: {
-          ...createdApiKey,
-          id: `key_${creationCount.current + 2}`,
+  Reflect.set(
+    window,
+    "fetch",
+    async (_url: RequestInfo | URL, options?: RequestInit) => {
+      if (options?.method !== "POST") {
+        return new Response(
+          JSON.stringify({ apiKeys: serverApiKeys.current }),
+          {
+            headers: { "Content-Type": "application/json" },
+            status: 200,
+          },
+        );
+      }
+
+      if (shouldDeferCreations.current) {
+        await new Promise<void>((resolve) => {
+          deferredCreationResolvers.current.push(resolve);
+        });
+      }
+      if (shouldFailNextCreation.current) {
+        shouldFailNextCreation.current = false;
+        return new Response(JSON.stringify({}), {
+          headers: { "Content-Type": "application/json" },
+          status: 503,
+        });
+      }
+      creationCount.current += 1;
+      const nextApiKey = {
+        ...createdApiKey,
+        id: `key_${creationCount.current + 2}`,
+      };
+      serverApiKeys.current = serverApiKeys.current.concat(nextApiKey);
+      return new Response(
+        JSON.stringify({
+          apiKey: nextApiKey,
+        }),
+        {
+          headers: { "Content-Type": "application/json" },
+          status: 200,
         },
-      }),
-      {
-        headers: { "Content-Type": "application/json" },
-        status: 200,
-      },
-    );
-  });
+      );
+    },
+  );
 
   return (
     <>
       <Settings
-        apiKeys={apiKeys}
+        apiKeys={settingsApiKeys}
         lists={settingsLists}
         user={settingsUser}
       />
-      <button
-        data-testid="refresh-api-keys"
-        onClick={() =>
-          setApiKeys([
-            ...settingsApiKeys,
-            { ...createdApiKey, active: false },
-          ])
-        }
-      >
-        Refresh API keys
-      </button>
       <button
         data-testid="fail-next-creation"
         onClick={() => {
