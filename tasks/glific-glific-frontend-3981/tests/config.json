@@ -1,7 +1,6 @@
 {
   "rd": {
-    "scan_root": "/app",
-    "exclude_rules": ["no-adjust-state-on-prop-change"]
+    "scan_root": "/app"
   },
   "verifier_timeout_sec": 1800,
   "test": {

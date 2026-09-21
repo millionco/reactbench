@@ -14,3 +14,33 @@ index b0328ed..bcb93dc 100644
 +if (typeof URL.revokeObjectURL !== "function") {
 +  URL.revokeObjectURL = jest.fn();
 +}
+diff --git a/src/components/image/index.test.tsx b/src/components/image/index.test.tsx
+index e152d9d..c26b321 100644
+--- a/src/components/image/index.test.tsx
++++ b/src/components/image/index.test.tsx
+@@ -241,6 +241,25 @@ describe("Image component", () => {
+       expect(asFragment()).toMatchSnapshot();
+     });
+
++    it("Should call onError when no property value is available", async () => {
++      const mockOnError = jest.fn();
++      (SolidFns.getUrl as jest.Mock).mockReturnValueOnce(null);
++
++      render(
++        <Image
++          thing={mockThing}
++          property={mockProperty}
++          onError={mockOnError}
++        />,
++      );
++
++      await waitFor(() =>
++        expect(mockOnError).toHaveBeenCalledWith(
++          expect.objectContaining({ message: "No value found for property." }),
++        ),
++      );
++    });
++
+     it("Should call onError if initial fetch fails, if it is passed", async () => {
+       const mockOnError = jest.fn();
+       (SolidFns.getFile as jest.Mock).mockRejectedValueOnce(

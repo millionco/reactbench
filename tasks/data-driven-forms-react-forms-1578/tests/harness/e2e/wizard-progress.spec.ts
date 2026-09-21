@@ -14,14 +14,18 @@ test.describe("PF4 wizard progress after submission (real browser)", () => {
 
     await expect(section.getByLabel(/Email/i)).toBeVisible();
     await section.getByLabel(/Email/i).fill("ada@example.com");
+    await section.getByLabel(/Email/i).press("Tab");
 
     await expect(section.getByRole("button", { name: "Submit" })).toBeVisible();
+    await expect(section.getByRole("button", { name: "Submit" })).toBeEnabled();
     await expect(section.getByRole("button", { name: "Next" })).toHaveCount(0);
 
     await section.getByRole("button", { name: "Submit" }).click();
 
     await expect(section.getByTestId("progress-content")).toBeVisible();
-    await expect(section.getByTestId("progress-submit-payload")).not.toHaveText("");
+    await expect(section.getByTestId("progress-submit-payload")).toContainText(
+      "ada@example.com",
+    );
   });
 
   test("keeps Next on the first ordinary step", async ({ page }) => {
