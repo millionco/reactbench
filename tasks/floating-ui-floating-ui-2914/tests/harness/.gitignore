@@ -1,6 +1,0 @@
-node_modules/
-.pnpm-store/
-.vite-cache/
-.vite/
-dist/
-test-results/

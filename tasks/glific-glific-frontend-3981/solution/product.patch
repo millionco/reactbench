@@ -62,12 +62,13 @@ index bb09889..a46f3d1 100644
  import dayjs from 'dayjs';
  import relativeTime from 'dayjs/plugin/relativeTime';
  import { COUNT_AI_EVALUATIONS, GET_EVALUATION_SCORES, LIST_AI_EVALUATIONS } from 'graphql/queries/AIEvaluations';
-+import { useEffect, useRef, useState } from 'react';
++import { useEffect, useMemo, useRef, useState } from 'react';
  import { useNavigate } from 'react-router';
  import styles from './AIEvaluationList.module.css';
 
-@@ -228,10 +229,49 @@ const queries = {
- export const AIEvaluationList = ({ searchQuery }: AIEvaluationListProps) => {
+@@ -228,10 +229,38 @@ const queries = {
+-export const AIEvaluationList = ({ searchQuery }: AIEvaluationListProps) => {
++const AIEvaluationListContent = ({ searchQuery }: AIEvaluationListProps) => {
    const navigate = useNavigate();
    const [fetchEvaluationScores] = useLazyQuery(GET_EVALUATION_SCORES);
 +  const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
@@ -76,33 +77,23 @@ index bb09889..a46f3d1 100644
 +    downloadingIdsRef.current = new Set();
 +  }
 +  const downloadingIdsStore = downloadingIdsRef.current;
-+  const downloadControllersRef = useRef(new Map<string, AbortController>());
++  const downloadControllers = useMemo(() => new Map<string, AbortController>(), []);
 +  useEffect(
 +    () => () => {
-+      for (const controller of downloadControllersRef.current.values()) {
++      for (const controller of downloadControllers.values()) {
 +        controller.abort();
 +      }
-+      downloadControllersRef.current.clear();
++      downloadControllers.clear();
 +      downloadingIdsStore.clear();
 +    },
-+    [downloadingIdsStore],
++    [downloadControllers, downloadingIdsStore],
 +  );
-+  const previousSearchQueryRef = useRef(searchQuery);
-+  useEffect(() => {
-+    if (previousSearchQueryRef.current === searchQuery) return;
-+    previousSearchQueryRef.current = searchQuery;
-+    for (const controller of downloadControllersRef.current.values()) {
-+      controller.abort();
-+    }
-+    downloadControllersRef.current.clear();
-+    downloadingIdsStore.clear();
-+    setDownloadingIds(new Set(downloadingIdsStore));
-+  }, [searchQuery, downloadingIdsStore]);
-
+-
++
    const handleDownload = async (id: string, name: string) => {
 +    if (downloadingIdsStore.has(id)) return;
 +    const controller = new AbortController();
-+    downloadControllersRef.current.set(id, controller);
++    downloadControllers.set(id, controller);
 +    downloadingIdsStore.add(id);
 +    setDownloadingIds(new Set(downloadingIdsStore));
      try {
@@ -117,15 +108,15 @@ index bb09889..a46f3d1 100644
 
        if (error) {
          setErrorMessage(error);
-@@ -278,22 +307,61 @@ export const AIEvaluationList = ({ searchQuery }: AIEvaluationListProps) => {
+@@ -278,22 +296,61 @@ const AIEvaluationListContent = ({ searchQuery }: AIEvaluationListProps) => {
        }
        triggerCsvDownload(csv, `${name}_scores.csv`);
      } catch (err) {
 -      setErrorMessage(err as Error);
 +      if (!controller.signal.aborted) setErrorMessage(err as Error);
 +    } finally {
-+      if (downloadControllersRef.current.get(id) === controller) {
-+        downloadControllersRef.current.delete(id);
++      if (downloadControllers.get(id) === controller) {
++        downloadControllers.delete(id);
 +        downloadingIdsStore.delete(id);
 +        setDownloadingIds(new Set(downloadingIdsStore));
 +      }
@@ -133,11 +124,11 @@ index bb09889..a46f3d1 100644
    };
 
 +  const cancelDownload = (id: string) => {
-+    const controller = downloadControllersRef.current.get(id);
++    const controller = downloadControllers.get(id);
 +    if (!controller) return;
 +    controller.abort();
-+    if (downloadControllersRef.current.get(id) === controller) {
-+      downloadControllersRef.current.delete(id);
++    if (downloadControllers.get(id) === controller) {
++      downloadControllers.delete(id);
 +      downloadingIdsStore.delete(id);
 +      setDownloadingIds(new Set(downloadingIdsStore));
 +    }
@@ -184,6 +175,17 @@ index bb09889..a46f3d1 100644
        },
      ];
    };
+@@ -317,5 +374,9 @@ const AIEvaluationListContent = ({ searchQuery }: AIEvaluationListProps) => {
+     />
+   );
+ };
+-
++
++export const AIEvaluationList = ({ searchQuery }: AIEvaluationListProps) => (
++  <AIEvaluationListContent key={searchQuery} searchQuery={searchQuery} />
++);
++
+ export default AIEvaluationList;
 diff --git a/src/containers/List/List.tsx b/src/containers/List/List.tsx
 index c73530f..a0a4cab 100644
 --- a/src/containers/List/List.tsx

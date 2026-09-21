@@ -1,9 +1,6 @@
 {
   "rd": {
-    "scan_root": "/app/packages/shared",
-    "exclude_rules": [
-      "effect-needs-cleanup"
-    ]
+    "scan_root": "/app/packages/shared"
   },
   "verifier_timeout_sec": 900,
   "test": {

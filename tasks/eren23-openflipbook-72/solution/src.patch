@@ -13,36 +13,37 @@ index fc43841..480bb4f 100644
 +  onLocalize?: ((signal: AbortSignal) => void | Promise<void>) | undefined;
 +  /** The current localize attempt for this node (page-held state). */
 +  localizeStatus?: "running" | "failed" | undefined;
-@@ -27,0 +35,82 @@ const KIND_COLOR: Record<string, string> = {
+@@ -27,0 +35,83 @@ const KIND_COLOR: Record<string, string> = {
 +interface LocalizationEmptyStateProps {
 +  onLocalize?: (() => void | Promise<void>) | undefined;
 +  status?: "running" | "failed" | undefined;
 +}
 +
 +interface LocalizationAttemptState {
-+  callbackGeneration: number;
++  callback: (() => void | Promise<void>) | undefined;
 +  phase: "pending" | "failed";
 +}
 +
 +function LocalizationEmptyState({ onLocalize, status }: LocalizationEmptyStateProps) {
-+  const callbackBoundaryRef = useRef({ callback: onLocalize, generation: 0 });
-+  if (callbackBoundaryRef.current.callback !== onLocalize) {
-+    callbackBoundaryRef.current = {
-+      callback: onLocalize,
-+      generation: callbackBoundaryRef.current.generation + 1,
-+    };
-+  }
-+  const callbackGeneration = callbackBoundaryRef.current.generation;
++  const callbackGenerationRef = useRef(0);
 +  const activeGenerationRef = useRef<number | null>(null);
 +  const [attemptState, setAttemptState] = useState<LocalizationAttemptState | null>(null);
-+  const currentAttempt = attemptState?.callbackGeneration === callbackGeneration
-+    ? attemptState
-+    : null;
++  const currentAttempt = attemptState?.callback === onLocalize ? attemptState : null;
++  useLayoutEffect(() => {
++    callbackGenerationRef.current += 1;
++    activeGenerationRef.current = null;
++    setAttemptState(null);
++    return () => {
++      callbackGenerationRef.current += 1;
++      activeGenerationRef.current = null;
++    };
++  }, [onLocalize]);
 +
 +  const handleLocalize = () => {
++    const callbackGeneration = callbackGenerationRef.current;
 +    if (!onLocalize || activeGenerationRef.current === callbackGeneration) return;
 +    activeGenerationRef.current = callbackGeneration;
-+    setAttemptState({ callbackGeneration, phase: "pending" });
++    setAttemptState({ callback: onLocalize, phase: "pending" });
 +
 +    let result: void | Promise<void>;
 +    try {
@@ -50,7 +51,7 @@ index fc43841..480bb4f 100644
 +    } catch {
 +      if (activeGenerationRef.current === callbackGeneration) {
 +        activeGenerationRef.current = null;
-+        setAttemptState({ callbackGeneration, phase: "failed" });
++        setAttemptState({ callback: onLocalize, phase: "failed" });
 +      }
 +      return;
 +    }
@@ -65,7 +66,7 @@ index fc43841..480bb4f 100644
 +        () => {
 +          if (activeGenerationRef.current !== callbackGeneration) return;
 +          activeGenerationRef.current = null;
-+          setAttemptState({ callbackGeneration, phase: "failed" });
++          setAttemptState({ callback: onLocalize, phase: "failed" });
 +        },
 +      );
 +    }
@@ -96,10 +97,10 @@ index fc43841..480bb4f 100644
 +  );
 +}
 +
-@@ -36,0 +126,2 @@ export default function GeometryOverlay({
+@@ -36,0 +127,2 @@ export default function GeometryOverlay({
 +  onLocalize,
 +  localizeStatus,
-@@ -54,0 +146,37 @@ export default function GeometryOverlay({
+@@ -54,0 +147,37 @@ export default function GeometryOverlay({
 +  const hasDrawableGeometry = boxes.length > 0;
 +  const activeLocalizationControllerRef = useRef<AbortController | null>(null);
 +  useLayoutEffect(() => () => {
@@ -137,7 +138,7 @@ index fc43841..480bb4f 100644
 +      },
 +    );
 +  }, [onLocalize]);
-@@ -102,2 +230,8 @@ export default function GeometryOverlay({
+@@ -102,2 +231,8 @@ export default function GeometryOverlay({
 -        <div className="absolute bottom-1 left-1 rounded bg-black/60 px-1.5 py-0.5 text-[10px] text-white">
 -          no localized geometry for this page
 +        // bottom-RIGHT: bottom-left is the Pin-style chip's spot (the audit's

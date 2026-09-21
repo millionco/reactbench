@@ -1,7 +1,6 @@
 {
   "rd": {
-    "scan_root": "/app/apps/web",
-    "exclude_rules": ["no-reset-all-state-on-prop-change"]
+    "scan_root": "/app/apps/web"
   },
   "verifier_timeout_sec": 1200,
   "test": {

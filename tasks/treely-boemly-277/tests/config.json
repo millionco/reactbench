@@ -1,9 +1,6 @@
 {
   "rd": {
-    "scan_root": "/app",
-    "exclude_rules": [
-      "exhaustive-deps"
-    ]
+    "scan_root": "/app"
   },
   "verifier_timeout_sec": 900,
   "test": {

@@ -179,7 +179,7 @@ index 906ca176d..017d1e33d 100644
      [defaultWidths, resizedWidths, savedWidths],
    );
 +  const currentWidths = useRef(widths);
-+  currentWidths.current = widths;
++  useEffect(() => { currentWidths.current = widths; }, [widths]);
    const activeCleanup = useRef<(() => void) | null>(null);
  
    const startResize = useCallback(
