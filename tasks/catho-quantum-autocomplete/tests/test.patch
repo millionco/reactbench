@@ -1,0 +1,107 @@
+diff --git a/components/AutoComplete/AutoComplete.keyboard.unit.test.jsx b/components/AutoComplete/AutoComplete.keyboard.unit.test.jsx
+new file mode 100644
+index 0000000..1270842
+--- /dev/null
++++ b/components/AutoComplete/AutoComplete.keyboard.unit.test.jsx
+@@ -0,0 +1,101 @@
++import { render, screen } from '@testing-library/react';
++import userEvent from '@testing-library/user-event';
++import AutoComplete from './AutoComplete';
++
++const Examples = ['morango', 'melancia', 'maça', 'banana', 'laranja'];
++
++const ARROW_DOWN_KEY_CODE = '{ArrowDown}';
++const ENTER_KEY_CODE = '{Enter}';
++const TAB_KEY_CODE = '{Tab}';
++
++describe('AutoComplete keyboard', () => {
++  it('Should select the highlighted option when user press Tab', async () => {
++    const onSelectedItemMock = jest.fn();
++    render(
++      <AutoComplete
++        suggestions={Examples}
++        onSelectedItem={onSelectedItemMock}
++      />,
++    );
++    const input = screen.getByRole('combobox');
++
++    await userEvent.type(input, 'm');
++    const autoCompleteOptionsList = await screen.findByRole('listbox');
++
++    await userEvent.keyboard(`${ARROW_DOWN_KEY_CODE}${ARROW_DOWN_KEY_CODE}`);
++    expect(screen.getByRole('option', { name: /melancia/i })).toHaveFocus();
++
++    await userEvent.keyboard(TAB_KEY_CODE);
++
++    expect(input).toHaveValue('melancia');
++    expect(onSelectedItemMock).toHaveBeenCalledTimes(1);
++    expect(onSelectedItemMock).toHaveBeenCalledWith('melancia');
++    expect(autoCompleteOptionsList).not.toBeInTheDocument();
++    expect(input).toHaveAttribute('aria-expanded', 'false');
++  });
++
++  it('Should close options without selecting when user press Tab and no option is highlighted', async () => {
++    const onSelectedItemMock = jest.fn();
++    render(
++      <AutoComplete
++        suggestions={Examples}
++        onSelectedItem={onSelectedItemMock}
++      />,
++    );
++    const input = screen.getByRole('combobox');
++
++    await userEvent.type(input, 'mel');
++    const autoCompleteOptionsList = await screen.findByRole('listbox');
++
++    await userEvent.keyboard(TAB_KEY_CODE);
++
++    expect(input).toHaveValue('mel');
++    expect(onSelectedItemMock).not.toHaveBeenCalled();
++    expect(autoCompleteOptionsList).not.toBeInTheDocument();
++  });
++
++  it('Should keep the typed value when user press Tab after reopening the options', async () => {
++    const onSelectedItemMock = jest.fn();
++    render(
++      <AutoComplete
++        suggestions={Examples}
++        onSelectedItem={onSelectedItemMock}
++      />,
++    );
++    const input = screen.getByRole('combobox');
++
++    await userEvent.type(input, 'm');
++    await screen.findByRole('listbox');
++    await userEvent.keyboard(`${ARROW_DOWN_KEY_CODE}${ENTER_KEY_CODE}`);
++
++    expect(input).toHaveValue('morango');
++    expect(onSelectedItemMock).toHaveBeenCalledWith('morango');
++
++    await userEvent.click(input);
++    const autoCompleteOptionsList = await screen.findByRole('listbox');
++    await userEvent.keyboard(TAB_KEY_CODE);
++
++    expect(input).toHaveValue('morango');
++    expect(onSelectedItemMock).toHaveBeenCalledTimes(1);
++    expect(autoCompleteOptionsList).not.toBeInTheDocument();
++  });
++
++  it('Should report every typed value and the cleared value through onChange', async () => {
++    const onChangeMock = jest.fn();
++    const { container } = render(
++      <AutoComplete suggestions={Examples} onChange={onChangeMock} />,
++    );
++    const input = screen.getByRole('combobox');
++
++    await userEvent.type(input, 'ban');
++
++    expect(onChangeMock.mock.calls).toEqual([['b'], ['ba'], ['ban']]);
++    expect(screen.getAllByRole('option')).toHaveLength(1);
++    expect(screen.getByRole('option', { name: 'banana' })).toBeInTheDocument();
++
++    await userEvent.click(container.querySelectorAll('svg')[0]);
++
++    expect(onChangeMock).toHaveBeenLastCalledWith('');
++    expect(input).toHaveValue('');
++  });
++});

@@ -1,0 +1,126 @@
+diff --git a/src/selection.test.tsx b/src/selection.test.tsx
+new file mode 100644
+index 0000000..db3f1e2
+--- /dev/null
++++ b/src/selection.test.tsx
+@@ -0,0 +1,120 @@
++import * as React from "react";
++import "@testing-library/jest-dom";
++import { render, screen, fireEvent, waitFor } from "@testing-library/react";
++import { rest } from "msw";
++import { setupServer } from "msw/node";
++import { ReactTransliterate } from "./index";
++
++const server = setupServer(
++  rest.get("https://inputtools.google.com/request", (req, res, ctx) => {
++    const text = req.url.searchParams.get("text");
++    return res(ctx.json(["SUCCESS", [[text, ["hi", "hey", "hello"]]]]));
++  }),
++);
++
++beforeAll(() => server.listen());
++afterEach(() => server.resetHandlers());
++afterAll(() => server.close());
++
++const ControlledTransliterate = ({
++  onChangeText,
++}: {
++  onChangeText: (text: string) => void;
++}) => {
++  const [text, setText] = React.useState("");
++  return (
++    <ReactTransliterate
++      value={text}
++      onChangeText={(next) => {
++        onChangeText(next);
++        setText(next);
++      }}
++    />
++  );
++};
++
++const typeText = async (text: string) => {
++  fireEvent.change(screen.getByTestId("rt-input-component"), {
++    target: { value: text },
++  });
++  await waitFor(() => {
++    expect(screen.getByTestId("rt-suggestions-list")).toBeInTheDocument();
++  });
++};
++
++const getSuggestionTexts = () =>
++  Array.from(
++    screen.getByTestId("rt-suggestions-list").querySelectorAll("li"),
++  ).map((item) => item.textContent);
++
++describe("ReactTransliterate suggestion selection", () => {
++  it("shows the fetched suggestions followed by the typed word", async () => {
++    const onChangeText = jest.fn();
++    render(<ControlledTransliterate onChangeText={onChangeText} />);
++    await typeText("foo there");
++    expect(getSuggestionTexts()).toEqual(["hi", "hey", "hello", "there"]);
++    expect(onChangeText).toHaveBeenLastCalledWith("foo there");
++    expect(screen.getByTestId("rt-input-component")).toHaveValue("foo there");
++  });
++
++  it("replaces the current word when a suggestion is clicked", async () => {
++    const onChangeText = jest.fn();
++    render(<ControlledTransliterate onChangeText={onChangeText} />);
++    await typeText("foo there");
++    fireEvent.click(screen.getByText("hey"));
++    expect(onChangeText).toHaveBeenLastCalledWith("foo hey ");
++    expect(screen.getByTestId("rt-input-component")).toHaveValue("foo hey ");
++    expect(screen.queryByTestId("rt-suggestions-list")).not.toBeInTheDocument();
++  });
++
++  it("replaces the current word with the active suggestion on Enter", async () => {
++    const onChangeText = jest.fn();
++    render(<ControlledTransliterate onChangeText={onChangeText} />);
++    await typeText("foo there");
++    fireEvent.keyDown(screen.getByTestId("rt-input-component"), {
++      key: "Enter",
++    });
++    expect(onChangeText).toHaveBeenLastCalledWith("foo hi ");
++    expect(screen.getByTestId("rt-input-component")).toHaveValue("foo hi ");
++    expect(screen.queryByTestId("rt-suggestions-list")).not.toBeInTheDocument();
++  });
++
++  it("moves the active suggestion with the arrow keys before Enter", async () => {
++    const onChangeText = jest.fn();
++    render(<ControlledTransliterate onChangeText={onChangeText} />);
++    await typeText("foo there");
++    const input = screen.getByTestId("rt-input-component");
++    fireEvent.keyDown(input, { key: "ArrowDown" });
++    fireEvent.keyDown(input, { key: "ArrowDown" });
++    fireEvent.keyDown(input, { key: "ArrowUp" });
++    fireEvent.keyDown(input, { key: "Enter" });
++    expect(onChangeText).toHaveBeenLastCalledWith("foo hey ");
++    expect(input).toHaveValue("foo hey ");
++  });
++
++  it("keeps the typed text and closes the list on Escape", async () => {
++    const onChangeText = jest.fn();
++    render(<ControlledTransliterate onChangeText={onChangeText} />);
++    await typeText("foo there");
++    fireEvent.keyDown(screen.getByTestId("rt-input-component"), {
++      key: "Escape",
++    });
++    expect(screen.queryByTestId("rt-suggestions-list")).not.toBeInTheDocument();
++    expect(onChangeText).toHaveBeenCalledTimes(1);
++    expect(screen.getByTestId("rt-input-component")).toHaveValue("foo there");
++  });
++
++  it("replaces only the latest word after a second word is typed", async () => {
++    const onChangeText = jest.fn();
++    render(<ControlledTransliterate onChangeText={onChangeText} />);
++    await typeText("ab");
++    fireEvent.keyDown(screen.getByTestId("rt-input-component"), {
++      key: "Enter",
++    });
++    expect(screen.getByTestId("rt-input-component")).toHaveValue("hi ");
++    await typeText("hi cde");
++    fireEvent.click(screen.getByText("hello"));
++    expect(onChangeText).toHaveBeenLastCalledWith("hi hello ");
++    expect(screen.getByTestId("rt-input-component")).toHaveValue("hi hello ");
++  });
++});

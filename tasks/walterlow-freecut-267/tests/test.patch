@@ -32,7 +32,7 @@ new file mode 100644
 index 000000000..11951b2a4
 --- /dev/null
 +++ b/src/features/settings/components/hotkey-editor-reset-dialog.test.tsx
-@@ -0,0 +1,214 @@
+@@ -0,0 +1,228 @@
 +import { createElement } from 'react'
 +import * as DialogPrimitive from '@radix-ui/react-dialog'
 +import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -88,6 +88,17 @@ index 000000000..11951b2a4
 +  expect(conflictRow).not.toBeNull()
 +  return within(conflictRow!).getByRole('button', { name: 'Overwrite' })
 +}
++
++// The all-at-once action may use any wording, e.g. "Overwrite all" or "Resolve all conflicts",
++// so it is found among the buttons that appeared with the conflicts.
++const queryOverwriteAllButtons = (buttonsBeforeCapture: Set<HTMLElement>) =>
++  screen
++    .queryAllByRole('button', {
++      name: (name) =>
++        name !== 'Overwrite' &&
++        /\b(all|both|every|remaining)\b|overwrite|resolve|replace/i.test(name),
++    })
++    .filter((button) => !buttonsBeforeCapture.has(button))
 +
 +describe('HotkeyEditor behavior', () => {
 +  beforeEach(() => {
@@ -175,10 +186,13 @@ index 000000000..11951b2a4
 +      PLAY_PAUSE: 'shift+k',
 +      PREVIOUS_FRAME: 'right',
 +    }
++    const buttonsBeforeCapture = new Set(screen.getAllByRole('button'))
 +    await startConflictingCapture(initialOverrides)
 +    await screen.findByText('Conflicts with Previous frame')
 +
-+    fireEvent.click(screen.getByRole('button', { name: 'Overwrite all' }))
++    const overwriteAllButtons = queryOverwriteAllButtons(buttonsBeforeCapture)
++    expect(overwriteAllButtons).toHaveLength(1)
++    fireEvent.click(overwriteAllButtons[0]!)
 +    expect(useSettingsStore.getState().hotkeyOverrides).toEqual(initialOverrides)
 +    expect(screen.getByRole('button', { name: 'Save' })).not.toBeDisabled()
 +
@@ -218,7 +232,7 @@ index 000000000..11951b2a4
 +    COMPONENT_TEST_TIMEOUT_MS,
 +  )
 +
-+  it('clears staged conflict decisions when a different draft binding is recorded', async () => {
++  it('keeps Save disabled and the store unchanged when a different draft binding conflicts', async () => {
 +    await startConflictingCapture()
 +    fireEvent.click(getConflictOverwriteButton('Next frame'))
 +    expect(screen.getByRole('button', { name: 'Save' })).not.toBeDisabled()

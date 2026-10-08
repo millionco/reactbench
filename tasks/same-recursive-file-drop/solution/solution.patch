@@ -1,0 +1,197 @@
+diff --git a/src/drop-workspace.tsx b/src/drop-workspace.tsx
+index 0889450..14e8ad2 100644
+--- a/src/drop-workspace.tsx
++++ b/src/drop-workspace.tsx
+@@ -14,28 +14,49 @@ export const DropWorkspace = ({
+   const handleDragOver = useCallback((event: React.DragEvent<HTMLElement>) => {
+     event.preventDefault();
+     const folderElement = findDropFolderElement(event.target);
+-    setDragOverPath(folderElement?.dataset.path ?? null);
+-  }, []);
++    setDragOverPath(
++      folderElement?.dataset.path ?? defaultDestination ?? "root",
++    );
++  }, [defaultDestination]);
+ 
+   const handleDrop = useCallback(
+     async (event: React.DragEvent<HTMLElement>) => {
+       event.preventDefault();
+-      if (!isOwner) return;
+-
+-      const folderElement = findDropFolderElement(event.target);
+-      const destination = folderElement?.dataset.path ?? defaultDestination;
+-      if (destination === undefined) return;
+-
+-      const files = await getFilesFromDataTransferItems(
+-        event.dataTransfer.items,
+-      );
+-      await onUpload({
+-        destination,
+-        files,
+-        paths: resolveUploadPaths(files, destination),
+-      });
+-      setErrorMessage("");
+-      setDragOverPath(null);
++      try {
++        if (!isOwner) return;
++
++        const folderElement = findDropFolderElement(event.target);
++        const destination =
++          folderElement?.dataset.path ?? defaultDestination ?? "";
++        const fileItems = Array.from(event.dataTransfer.items).filter(
++          (item) => item.kind === "file",
++        );
++
++        if (fileItems.length === 0 && event.dataTransfer.items.length > 0) {
++          setErrorMessage("");
++          return;
++        }
++
++        const files =
++          fileItems.length > 0
++            ? await getFilesFromDataTransferItems(fileItems)
++            : Array.from(event.dataTransfer.files);
++        if (files.length === 0) {
++          setErrorMessage("");
++          return;
++        }
++
++        await onUpload({
++          destination,
++          files,
++          paths: resolveUploadPaths(files, destination),
++        });
++        setErrorMessage("");
++      } catch {
++        setErrorMessage("The dropped files could not be processed. Try again.");
++      } finally {
++        setDragOverPath(null);
++      }
+     },
+     [defaultDestination, isOwner, onUpload],
+   );
+diff --git a/src/get-files-from-data-transfer-items.ts b/src/get-files-from-data-transfer-items.ts
+index e56100d..c48351c 100644
+--- a/src/get-files-from-data-transfer-items.ts
++++ b/src/get-files-from-data-transfer-items.ts
+@@ -4,27 +4,51 @@ export const getFilesFromDataTransferItems = async (
+   const files: Array<File> = [];
+ 
+   const processEntry = async (entry: FileSystemEntryLike): Promise<void> => {
+-    if (!entry.isFile) return;
++    if (entry.isFile) {
++      await new Promise<void>((resolve, reject) => {
++        const fileEntry = entry as FileSystemFileEntryLike;
++        fileEntry.file((file) => {
++          const relativePath = entry.fullPath.replace(/^\//, "");
++          if (relativePath && relativePath !== file.name) {
++            const fileWithPath = new File([file], relativePath, {
++              type: file.type,
++            });
++            Object.defineProperty(fileWithPath, "webkitRelativePath", {
++              value: relativePath,
++            });
++            files.push(fileWithPath);
++          } else {
++            files.push(file);
++          }
++          resolve();
++        }, reject);
++      });
++      return;
++    }
+ 
+-    await new Promise<void>((resolve, reject) => {
+-      const fileEntry = entry as FileSystemFileEntryLike;
+-      fileEntry.file((file) => {
+-        const relativePath = entry.fullPath.replace(/^\//, "");
+-        if (relativePath && relativePath !== file.name) {
+-          const fileWithPath = new File([file], relativePath, { type: file.type });
+-          files.push(fileWithPath);
+-        } else {
+-          files.push(file);
+-        }
+-        resolve();
+-      }, reject);
+-    });
++    if (!entry.isDirectory) return;
++    const directoryEntry = entry as FileSystemDirectoryEntryLike;
++    const reader = directoryEntry.createReader();
++
++    while (true) {
++      const batch = await new Promise<Array<FileSystemEntryLike>>(
++        (resolve, reject) => reader.readEntries(resolve, reject),
++      );
++      if (batch.length === 0) break;
++      for (const childEntry of batch) await processEntry(childEntry);
++    }
+   };
+ 
+-  const entries = Array.from(items)
+-    .map((item) => item.webkitGetAsEntry())
+-    .filter(Boolean) as Array<FileSystemEntryLike>;
++  for (const item of Array.from(items)) {
++    if (item.kind !== "file") continue;
++    const entry = item.webkitGetAsEntry();
++    if (entry) {
++      await processEntry(entry);
++      continue;
++    }
+ 
+-  await Promise.all(entries.map(processEntry));
++    const directFile = item.getAsFile();
++    if (directFile) files.push(directFile);
++  }
+   return files;
+ };
+diff --git a/src/resolve-upload-paths.ts b/src/resolve-upload-paths.ts
+index a59a32e..b1a386d 100644
+--- a/src/resolve-upload-paths.ts
++++ b/src/resolve-upload-paths.ts
+@@ -4,11 +4,12 @@ export const resolveUploadPaths = (
+   files: Array<File>,
+   directory: string = UPLOADS_DIRECTORY,
+ ): Array<string> => {
+-  const normalizedDirectory = directory || UPLOADS_DIRECTORY;
++  const normalizedDirectory = directory;
+   const filesWithRelativePaths = files.filter(
+-    (file) => file.webkitRelativePath !== "",
++    (file) => Boolean(file.webkitRelativePath),
+   );
+-  const isFullFolderUpload = filesWithRelativePaths.length === files.length;
++  const isFullFolderUpload =
++    files.length > 0 && filesWithRelativePaths.length === files.length;
+   const rootFolderName = isFullFolderUpload
+     ? filesWithRelativePaths[0]?.webkitRelativePath.split("/")[0] ?? ""
+     : "";
+@@ -16,21 +17,24 @@ export const resolveUploadPaths = (
+   return files.map((file) => {
+     const relativePath = file.webkitRelativePath;
+     if (!relativePath) {
+-      return `${normalizedDirectory}/${file.name.replace(/\s+/g, "_")}`;
++      const fileName = file.name.replace(/\s+/g, "_");
++      return normalizedDirectory ? `${normalizedDirectory}/${fileName}` : fileName;
+     }
+ 
+     if (normalizedDirectory === UPLOADS_DIRECTORY) {
+       return `${UPLOADS_DIRECTORY}/${relativePath}`;
+     }
+ 
++    if (normalizedDirectory === "") return relativePath;
++
+     if (isFullFolderUpload) {
+-      const pathWithoutRoot = relativePath.replace(
+-        new RegExp(`^${rootFolderName}/`),
+-        "",
+-      );
++      const rootPrefix = `${rootFolderName}/`;
++      const pathWithoutRoot = relativePath.startsWith(rootPrefix)
++        ? relativePath.slice(rootPrefix.length)
++        : relativePath;
+       return pathWithoutRoot
+         ? `${normalizedDirectory}/${pathWithoutRoot}`
+-        : normalizedDirectory;
++        : `${normalizedDirectory}/${file.name.replace(/\s+/g, "_")}`;
+     }
+ 
+     return `${normalizedDirectory}/${relativePath}`;

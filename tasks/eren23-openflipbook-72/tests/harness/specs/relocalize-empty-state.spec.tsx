@@ -5,12 +5,27 @@ import GeometryOverlay from "@geometry-overlay";
 
 const entities = [{ id: "river", name: "River", kind: "place", appearance_bboxes: {} }];
 
+// Progress may be any visible text about localizing or a status/progressbar role, and it
+// may appear in more than one element.
+const progressText = /locali[sz]|progress|running|loading|working/i;
+const expectProgressShown = () => {
+  const indicators = [
+    ...screen.queryAllByRole("status"),
+    ...screen.queryAllByRole("progressbar"),
+    ...screen.queryAllByText(progressText),
+  ];
+  expect(indicators.length).toBeGreaterThan(0);
+};
+
+// A locked action is either removed in favor of progress or kept but disabled.
 const expectLockedPresentation = () => {
-  const lockedAction = screen.queryByRole("button", { name: /localiz/i });
-  if (lockedAction) {
-    expect(lockedAction).toBeDisabled();
-  } else {
-    expect(screen.getByText(/localiz/i)).toBeInTheDocument();
+  const actions = screen.queryAllByRole("button", { name: /locali[sz]|retry|try again/i });
+  if (actions.length === 0) {
+    expectProgressShown();
+    return;
+  }
+  for (const action of actions) {
+    expect(action.hasAttribute("disabled") || action.getAttribute("aria-disabled") === "true").toBe(true);
   }
 };
 
@@ -148,7 +163,7 @@ describe("geometry empty-state relocalization", () => {
       await pendingAttempt.catch(() => undefined);
     });
 
-    expect(screen.getByText(/localiz/i)).toBeInTheDocument();
+    expectProgressShown();
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
 
     rendered.rerender(
@@ -411,13 +426,13 @@ describe("geometry empty-state relocalization", () => {
         onLocalize={() => undefined}
       />,
     );
-    expect(screen.getByText(/localiz/i)).toBeInTheDocument();
+    expectProgressShown();
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 
   it("shows caller-owned progress even when no action callback is available", () => {
     render(<GeometryOverlay entities={entities} localizeStatus="running" nodeId="page-1" />);
-    expect(screen.getByText(/localiz/i)).toBeInTheDocument();
+    expectProgressShown();
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 

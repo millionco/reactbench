@@ -1,5 +1,0 @@
-{
-  "name": "qovery-date-picker-draft-range",
-  "vitest": "specs/date-picker.spec.tsx",
-  "playwright": "e2e/date-picker.spec.ts"
-}

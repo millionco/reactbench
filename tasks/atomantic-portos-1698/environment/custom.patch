@@ -1,0 +1,11 @@
+diff --git a/client/package.json b/client/package.json
+--- a/client/package.json
++++ b/client/package.json
+@@ -33,6 +33,7 @@
+   "devDependencies": {
+     "@eslint/js": "9.39.4",
+     "@tailwindcss/postcss": "4.3.1",
++    "@testing-library/dom": "10.4.1",
+     "@testing-library/jest-dom": "6.9.1",
+     "@testing-library/react": "16.3.2",
+     "@testing-library/user-event": "14.6.1",

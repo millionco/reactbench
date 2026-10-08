@@ -1,5 +1,0 @@
-harness/node_modules
-harness/.pnpm-store
-harness/.vite-cache
-harness/playwright-report
-harness/test-results

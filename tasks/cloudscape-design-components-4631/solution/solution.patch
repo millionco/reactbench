@@ -1,0 +1,135 @@
+diff --git a/src/internal/components/visual-context/index.tsx b/src/internal/components/visual-context/index.tsx
+index bf99e95..6b290c6 100644
+--- a/src/internal/components/visual-context/index.tsx
++++ b/src/internal/components/visual-context/index.tsx
+@@ -17,9 +17,20 @@ export function useVisualContext(elementRef: React.RefObject<HTMLElement>) {
+   const [value, setValue] = useState('');
+ 
+   useLayoutEffect(() => {
+-    if (elementRef.current) {
+-      const contextParent = findUpUntil(elementRef.current, node => !!node.className.match(contextMatch));
+-      setValue(contextParent?.className.match(contextMatch)![1] ?? '');
++    const element = elementRef.current;
++    if (element) {
++      const updateValue = () => {
++        const contextParent = findUpUntil(element, node => !!node.className.match(contextMatch));
++        setValue(contextParent?.className.match(contextMatch)![1] ?? '');
++      };
++      updateValue();
++      const observer = new MutationObserver(updateValue);
++      let ancestor: HTMLElement | null = element;
++      while (ancestor) {
++        observer.observe(ancestor, { attributes: true, attributeFilter: ['class'] });
++        ancestor = ancestor.parentElement;
++      }
++      return () => observer.disconnect();
+     }
+   }, [elementRef]);
+ 
+diff --git a/src/top-navigation/interfaces.ts b/src/top-navigation/interfaces.ts
+index 3bad629..053d17d 100644
+--- a/src/top-navigation/interfaces.ts
++++ b/src/top-navigation/interfaces.ts
+@@ -17,6 +17,14 @@ export interface TopNavigationProps extends BaseComponentProps {
+    */
+   identity: TopNavigationProps.Identity;
+ 
++  /**
++   * Visual context applied to the navigation bar.
++   * - "top-navigation": Applies the top-navigation visual context. The component maintains a dark appearance regardless of the page's light/dark mode setting. Child components automatically adapt their colors to work on this dark background.
++   * - "content-header": Applies the high-contrast content-header visual context.
++   * - "none": No visual context applied. The component and its children use the same colors as the rest of the page and respond to the global light/dark mode normally.
++   */
++  visualContext?: TopNavigationProps.VisualContext;
++
+   /**
+    * Use with an input or autosuggest control for a global search query.
+    */
+@@ -126,4 +134,7 @@ export namespace TopNavigationProps {
+     overflowMenuTriggerText?: string;
+     overflowMenuTitleText?: string;
+   }
++
++  export type VisualContext = 'top-navigation' | 'content-header' | 'none';
++
+ }
+diff --git a/src/top-navigation/internal.tsx b/src/top-navigation/internal.tsx
+index eea5af6..b02e8e4 100644
+--- a/src/top-navigation/internal.tsx
++++ b/src/top-navigation/internal.tsx
+@@ -6,7 +6,7 @@ import clsx from 'clsx';
+ import { useInternalI18n } from '../i18n/context';
+ import { getBaseProps } from '../internal/base-component';
+ import { ButtonTrigger } from '../internal/components/menu-dropdown';
+-import VisualContext from '../internal/components/visual-context';
++import { getVisualContextClassname } from '../internal/components/visual-context';
+ import { fireCancelableEvent, isPlainLeftClick } from '../internal/events';
+ import { InternalBaseComponentProps } from '../internal/hooks/use-base-component';
+ import { useEffectOnUpdate } from '../internal/hooks/use-effect-on-update';
+@@ -27,6 +27,7 @@ export default function InternalTopNavigation({
+   i18nStrings,
+   utilities,
+   search,
++  visualContext = 'top-navigation',
+   ...restProps
+ }: InternalTopNavigationProps) {
+   checkSafeUrl('TopNavigation', identity.href);
+@@ -222,30 +223,36 @@ export default function InternalTopNavigation({
+     );
+   };
+ 
++  const structuredContent = (
++    <>
++      {/* Render virtual content first to ensure React refs for content will be assigned on the actual nodes. */}
++      {content(true)}
++
++      {content(false)}
++
++      {menuTriggerVisible && overflowMenuOpen && (
++        <div className={styles['overflow-menu-drawer']}>
++          <OverflowMenu
++            headerText={i18nStrings?.overflowMenuTitleText}
++            dismissIconAriaLabel={i18nStrings?.overflowMenuDismissIconAriaLabel}
++            backIconAriaLabel={i18nStrings?.overflowMenuBackIconAriaLabel}
++            items={utilities.filter(
++              (utility, i) =>
++                (!responsiveState.hideUtilities || responsiveState.hideUtilities.indexOf(i) !== -1) &&
++                !utility.disableUtilityCollapse
++            )}
++            onClose={toggleOverflowMenu}
++          />
++        </div>
++      )}
++    </>
++  );
++
+   return (
+     <div {...baseProps} ref={__internalRootRef}>
+-      <VisualContext contextName="top-navigation">
+-        {/* Render virtual content first to ensure React refs for content will be assigned on the actual nodes. */}
+-        {content(true)}
+-
+-        {content(false)}
+-
+-        {menuTriggerVisible && overflowMenuOpen && (
+-          <div className={styles['overflow-menu-drawer']}>
+-            <OverflowMenu
+-              headerText={i18nStrings?.overflowMenuTitleText}
+-              dismissIconAriaLabel={i18nStrings?.overflowMenuDismissIconAriaLabel}
+-              backIconAriaLabel={i18nStrings?.overflowMenuBackIconAriaLabel}
+-              items={utilities.filter(
+-                (utility, i) =>
+-                  (!responsiveState.hideUtilities || responsiveState.hideUtilities.indexOf(i) !== -1) &&
+-                  !utility.disableUtilityCollapse
+-              )}
+-              onClose={toggleOverflowMenu}
+-            />
+-          </div>
+-        )}
+-      </VisualContext>
++      <div className={visualContext === 'none' ? undefined : getVisualContextClassname(visualContext)}>
++        {structuredContent}
++      </div>
+     </div>
+   );
+ }

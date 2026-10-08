@@ -6,7 +6,7 @@ import {
   VIEWPORT_HEIGHT_PX,
   WIDE_VIEWPORT_WIDTH_PX,
 } from "../constants";
-import { expect, test } from "./fixtures";
+import { expect, test } from "@playwright/test";
 
 test("hydrates deterministic server markup into the narrow layout without a mismatch", async ({
   page,

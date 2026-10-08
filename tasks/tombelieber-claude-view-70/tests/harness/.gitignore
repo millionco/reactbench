@@ -1,6 +1,0 @@
-node_modules
-.pnpm-store
-.vite
-.vite-cache
-test-results
-playwright-report

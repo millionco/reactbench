@@ -194,7 +194,7 @@ index 533c631a..e470bb6c 100644
 +    renderPanel({ seriesId: 'ser-1' }, '/?keep=yes&fcat=continuity');
 +    await screen.findByText('83');
 +    fireEvent.click(screen.getByTitle('Filter findings to pacing'));
-+    await waitFor(() => expect(params()).toContain('fcat=continuity%2Cpacing'));
++    await waitFor(() => expect(new URLSearchParams(params()).get('fcat')).toBe('continuity,pacing'));
 +    expect(screen.getByTitle('Clear the continuity filter')).toBeTruthy();
 +    expect(screen.getByTitle('Clear the pacing filter')).toBeTruthy();
 +    fireEvent.click(screen.getByTitle('Clear the continuity filter'));

@@ -94,13 +94,25 @@ export const DownloadHarness = () => {
     }
     if (operation.operationName === "EvaluationScores") {
       const evaluationId = String(operation.variables.id);
-      const signal = operation.getContext().fetchOptions?.signal as AbortSignal | undefined;
+      // A request counts as cancelled once, whether an AbortSignal in its context aborts
+      // (fetchOptions.signal or a signal passed directly in the context) or the client
+      // unsubscribes from it before it settles.
+      const context = operation.getContext();
+      const signals = [context.fetchOptions?.signal, ...Object.values(context)]
+        .filter((value): value is AbortSignal => value instanceof AbortSignal);
+      let isSettled = false;
+      let isCancelled = false;
       setRequestCount((count) => count + 1);
-      const rejectRequest = () => {
-        observer.error(new Error(`download ${evaluationId} failed`));
+      const settle = (send: () => void) => () => {
+        if (isSettled || isCancelled) return;
+        isSettled = true;
+        send();
         pendingRequests.current.delete(evaluationId);
       };
-      const abort = () => {
+      const rejectRequest = settle(() => observer.error(new Error(`download ${evaluationId} failed`)));
+      const cancel = () => {
+        if (isSettled || isCancelled) return;
+        isCancelled = true;
         setCancelledCount((count) => count + 1);
         cancelledRequests.current.set(evaluationId, {
           resolve: () => undefined,
@@ -115,14 +127,16 @@ export const DownloadHarness = () => {
           pendingRequests.current.delete(evaluationId);
         }
       };
-      signal?.addEventListener("abort", abort, { once: true });
+      for (const signal of signals) {
+        if (signal.aborted) cancel();
+        else signal.addEventListener("abort", cancel, { once: true });
+      }
       pendingRequests.current.set(evaluationId, {
-        resolve: () => {
+        resolve: settle(() => {
           observer.next(scorePayload);
           observer.complete();
-          pendingRequests.current.delete(evaluationId);
-        },
-        resolveError: () => {
+        }),
+        resolveError: settle(() => {
           observer.next({
             data: {
               evaluationScores: {
@@ -132,16 +146,17 @@ export const DownloadHarness = () => {
             },
           });
           observer.complete();
-          pendingRequests.current.delete(evaluationId);
-        },
-        resolveWarning: () => {
+        }),
+        resolveWarning: settle(() => {
           observer.next({ data: { evaluationScores: { scores: null, errors: [] } } });
           observer.complete();
-          pendingRequests.current.delete(evaluationId);
-        },
+        }),
         reject: rejectRequest
       });
-      return () => signal?.removeEventListener("abort", abort);
+      return () => {
+        for (const signal of signals) signal.removeEventListener("abort", cancel);
+        cancel();
+      };
     }
   })), []);
 
