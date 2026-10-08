@@ -25,10 +25,6 @@
     "src",
     "vite.config.ts",
     "playwright.config.ts",
-    "setup.ts",
-    "coverage.ts",
-    "global-setup.ts",
-    "playwright-constants.ts",
-    "custom-test-harness.json"
+    "setup.ts"
   ]
 }

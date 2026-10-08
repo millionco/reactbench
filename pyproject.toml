@@ -4,7 +4,9 @@
 [project]
 name = "reactbench"
 version = "0.1.0"
-requires-python = ">=3.13"
+requires-python = ">=3.13,<3.14"
 dependencies = [
-  "harbor>=0.18.0",
+  "harbor[vercel]==0.23.0",
+  # Harbor 0.23 passes project_id to create_sandbox, which vercel 0.11 removed.
+  "vercel==0.10.0",
 ]

@@ -65,6 +65,45 @@ const triageView = ({ rows = catalogRows, seriesId = "series-1" } = {}) => (
 
 const renderTriage = (options = {}) => render(triageView(options));
 
+const GROUP_LABELS = ["Rule check", "LLM check", "Disabled catalog rule", "Blank description", "missing.check"];
+
+// A group's header is its expandable button named with the group label; the label may
+// sit anywhere in the name, and the description and disable controls are separate buttons.
+const isGroupHeaderName = (label: string) => (name: string) =>
+  name.includes(label) && !/^(Show|Hide) description for |^Disable check: /.test(name);
+const queryGroupHeaders = (label: string) =>
+  screen
+    .queryAllByRole("button", { name: isGroupHeaderName(label) })
+    .filter((button) => button.hasAttribute("aria-expanded"));
+const queryGroupHeader = (label: string) => {
+  const headers = queryGroupHeaders(label);
+  expect(headers.length).toBeLessThanOrEqual(1);
+  return headers[0] ?? null;
+};
+const getGroupHeader = (label: string) => {
+  const header = queryGroupHeader(label);
+  expect(header).not.toBeNull();
+  return header as HTMLElement;
+};
+
+// The group's own area: the largest ancestor of its header that holds no other group
+// header and no toolbar search, so a badge may sit inside or beside the header button.
+const groupScope = (header: HTMLElement) => {
+  const boundaries = [
+    ...GROUP_LABELS.flatMap(queryGroupHeaders),
+    ...screen.queryAllByRole("searchbox")
+  ].filter((element) => element !== header);
+  let scope = header;
+  while (
+    scope.parentElement &&
+    scope.parentElement !== document.body &&
+    !boundaries.some((boundary) => scope.parentElement?.contains(boundary))
+  ) {
+    scope = scope.parentElement;
+  }
+  return scope;
+};
+
 const expectDescriptionHidden = (descriptionText: string) => {
   const description = screen.queryByText(descriptionText);
   if (description) expect(description).not.toBeVisible();
@@ -174,17 +213,17 @@ describe("finding group metadata presentation", () => {
   it("shows distinct rule and LLM badges in their finding group headers", () => {
     renderTriage();
 
-    const ruleHeader = screen.getByRole("button", { name: /^Rule check/ });
-    const llmHeader = screen.getByRole("button", { name: /^LLM check/ });
+    const ruleHeader = getGroupHeader("Rule check");
+    const llmHeader = getGroupHeader("LLM check");
 
-    expect(within(ruleHeader).getByText("Rule")).toBeVisible();
-    expect(within(llmHeader).getByText("LLM")).toBeVisible();
+    expect(within(groupScope(ruleHeader)).getByText("Rule")).toBeVisible();
+    expect(within(groupScope(llmHeader)).getByText("LLM")).toBeVisible();
   });
 
   it("keeps descriptions hidden until their own toggle is used", () => {
     renderTriage();
 
-    const groupHeader = screen.getByRole("button", { name: /^Rule check/ });
+    const groupHeader = getGroupHeader("Rule check");
     const descriptionToggle = screen.getByRole("button", { name: "Show description for Rule check" });
 
     expectDescriptionHidden("A deterministic catalog description.");
@@ -264,18 +303,18 @@ describe("finding group metadata presentation", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Show description for Rule check" }));
     expect(screen.getByText("A deterministic catalog description.")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: /^Rule check/ }));
-    expect(screen.getByRole("button", { name: /^Rule check/ })).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(getGroupHeader("Rule check"));
+    expect(getGroupHeader("Rule check")).toHaveAttribute("aria-expanded", "false");
 
     const search = screen.getByRole("searchbox", { name: "Search findings" });
     fireEvent.change(search, { target: { value: "LLM finding" } });
     await waitFor(() => {
-      expect(screen.queryByRole("button", { name: /^Rule check/ })).not.toBeInTheDocument();
+      expect(queryGroupHeader("Rule check")).not.toBeInTheDocument();
     });
 
     fireEvent.change(search, { target: { value: "" } });
     await waitFor(() => {
-      expect(screen.getByRole("button", { name: /^Rule check/ })).toHaveAttribute("aria-expanded", "false");
+      expect(getGroupHeader("Rule check")).toHaveAttribute("aria-expanded", "false");
       expect(screen.getByRole("button", { name: "Hide description for Rule check" })).toHaveAttribute("aria-expanded", "true");
       expect(screen.getByText("A deterministic catalog description.")).toBeVisible();
     });
@@ -291,7 +330,7 @@ describe("finding group metadata presentation", () => {
   it("does not invent badge metadata for findings missing from the catalog", () => {
     renderTriage();
 
-    const missingHeader = screen.getByRole("button", { name: /^missing\.check/ });
+    const missingHeader = groupScope(getGroupHeader("missing.check"));
     expect(within(missingHeader).queryByText("Rule")).not.toBeInTheDocument();
     expect(within(missingHeader).queryByText("LLM")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /description for missing\.check/ })).not.toBeInTheDocument();
@@ -300,7 +339,7 @@ describe("finding group metadata presentation", () => {
   it("shows metadata for a disabled check without offering another disable action", () => {
     renderTriage();
 
-    const disabledHeader = screen.getByRole("button", { name: /^Disabled catalog rule/ });
+    const disabledHeader = groupScope(getGroupHeader("Disabled catalog rule"));
     expect(within(disabledHeader).getByText("Rule")).toBeVisible();
     expect(screen.queryByRole("button", { name: "Disable check: Disabled catalog rule" })).not.toBeInTheDocument();
 
@@ -336,7 +375,8 @@ describe("editorial page data flow", () => {
       </MemoryRouter>
     );
 
-    const disabledHeader = await screen.findByRole("button", { name: /^Disabled catalog rule/ });
+    await waitFor(() => expect(queryGroupHeader("Disabled catalog rule")).not.toBeNull());
+    const disabledHeader = groupScope(getGroupHeader("Disabled catalog rule"));
     expect(within(disabledHeader).getByText("Rule")).toBeVisible();
 
     fireEvent.click(screen.getByRole("button", { name: "Show description for Disabled catalog rule" }));

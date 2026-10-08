@@ -1,0 +1,153 @@
+diff --git a/src/views/Trash/hooks/useTrashPagination.behavior.test.ts b/src/views/Trash/hooks/useTrashPagination.behavior.test.ts
+new file mode 100644
+index 0000000..cc07768
+--- /dev/null
++++ b/src/views/Trash/hooks/useTrashPagination.behavior.test.ts
+@@ -0,0 +1,147 @@
++/**
++ * @jest-environment jsdom
++ */
++import { act, renderHook, waitFor } from '@testing-library/react';
++import errorService from 'services/error.service';
++import { OrderDirection, OrderSettings } from 'app/core/types';
++import { beforeEach, describe, expect, it, vi } from 'vitest';
++import { useTrashPagination } from './useTrashPagination';
++
++vi.mock('services/error.service', () => ({
++  default: {
++    castError: vi.fn().mockImplementation((e) => ({ message: e.message ?? 'Default error message' })),
++    reportError: vi.fn(),
++  },
++}));
++
++const flush = () =>
++  act(async () => {
++    await new Promise((resolve) => setTimeout(resolve, 30));
++  });
++
++describe('useTrashPagination pagination calls', () => {
++  const nameAsc: OrderSettings = { by: 'name', direction: OrderDirection.Asc };
++  const dateDesc: OrderSettings = { by: 'updatedAt', direction: OrderDirection.Desc };
++
++  const makeProps = (overrides = {}) => ({
++    getTrashPaginated: vi.fn().mockResolvedValue({ finished: false, itemsRetrieved: 50 }),
++    folderOnTrashLength: 10,
++    filesOnTrashLength: 5,
++    setHasMoreItems: vi.fn(),
++    isTrash: true,
++    order: nameAsc,
++    ...overrides,
++  });
++
++  beforeEach(() => {
++    vi.clearAllMocks();
++  });
++
++  it('fetches the first folder page exactly once on mount', async () => {
++    const props = makeProps();
++    const { result } = renderHook(() => useTrashPagination(props));
++
++    await waitFor(() => expect(props.getTrashPaginated).toHaveBeenCalled());
++    await flush();
++
++    expect(props.getTrashPaginated).toHaveBeenCalledTimes(1);
++    expect(props.getTrashPaginated).toHaveBeenCalledWith(50, 10, 'folders', true, 'plainName', 'ASC');
++    expect(result.current.isLoadingTrashItems).toBe(false);
++    expect(result.current.hasMoreTrashFolders).toBe(true);
++  });
++
++  it('does not fetch on mount when isTrash is false', async () => {
++    const props = makeProps({ isTrash: false });
++    const { result } = renderHook(() => useTrashPagination(props));
++
++    await flush();
++
++    expect(props.getTrashPaginated).not.toHaveBeenCalled();
++    expect(result.current.isLoadingTrashItems).toBe(false);
++    expect(result.current.hasMoreTrashFolders).toBe(true);
++  });
++
++  it('does not refetch when the last folder page flips hasMoreTrashFolders', async () => {
++    const props = makeProps({
++      getTrashPaginated: vi.fn().mockResolvedValue({ finished: true, itemsRetrieved: 3 }),
++    });
++    const { result } = renderHook(() => useTrashPagination(props));
++
++    await waitFor(() => expect(result.current.hasMoreTrashFolders).toBe(false));
++    await flush();
++
++    expect(props.getTrashPaginated).toHaveBeenCalledTimes(1);
++    expect(props.setHasMoreItems).not.toHaveBeenCalled();
++  });
++
++  it('does not refetch when the item counts, order or callbacks change after mount', async () => {
++    const props = makeProps();
++    const { result, rerender } = renderHook((current) => useTrashPagination(current), { initialProps: props });
++
++    await waitFor(() => expect(props.getTrashPaginated).toHaveBeenCalledTimes(1));
++    await flush();
++
++    rerender({ ...props, folderOnTrashLength: 60, filesOnTrashLength: 7 });
++    await flush();
++    rerender({ ...props, folderOnTrashLength: 60, order: dateDesc, setHasMoreItems: vi.fn() });
++    await flush();
++
++    expect(props.getTrashPaginated).toHaveBeenCalledTimes(1);
++    expect(result.current.isLoadingTrashItems).toBe(false);
++  });
++
++  it('loads more folders, then files, with the current offsets and sort', async () => {
++    const getTrashPaginated = vi
++      .fn()
++      .mockResolvedValueOnce({ finished: false, itemsRetrieved: 50 })
++      .mockResolvedValueOnce({ finished: true, itemsRetrieved: 20 })
++      .mockResolvedValueOnce({ finished: false, itemsRetrieved: 50 })
++      .mockResolvedValueOnce({ finished: true, itemsRetrieved: 4 });
++    const props = makeProps({ getTrashPaginated, folderOnTrashLength: 0, filesOnTrashLength: 0 });
++    const { result, rerender } = renderHook((current) => useTrashPagination(current), { initialProps: props });
++
++    await waitFor(() => expect(getTrashPaginated).toHaveBeenCalledTimes(1));
++    await flush();
++    expect(getTrashPaginated).toHaveBeenLastCalledWith(50, 0, 'folders', true, 'plainName', 'ASC');
++
++    rerender({ ...props, folderOnTrashLength: 50, order: dateDesc });
++    await act(async () => {
++      await result.current.getMoreTrashItems();
++    });
++    expect(getTrashPaginated).toHaveBeenCalledTimes(2);
++    expect(getTrashPaginated).toHaveBeenLastCalledWith(50, 50, 'folders', true, 'updatedAt', 'DESC');
++    expect(result.current.hasMoreTrashFolders).toBe(false);
++
++    await act(async () => {
++      await result.current.getMoreTrashItems();
++    });
++    expect(getTrashPaginated).toHaveBeenCalledTimes(3);
++    expect(getTrashPaginated).toHaveBeenLastCalledWith(50, 0, 'files', true, 'updatedAt', 'DESC');
++    expect(props.setHasMoreItems).toHaveBeenLastCalledWith(true);
++
++    rerender({ ...props, folderOnTrashLength: 70, filesOnTrashLength: 50, order: dateDesc });
++    await act(async () => {
++      await result.current.getMoreTrashItems();
++    });
++    expect(getTrashPaginated).toHaveBeenCalledTimes(4);
++    expect(getTrashPaginated).toHaveBeenLastCalledWith(50, 50, 'files', true, 'updatedAt', 'DESC');
++    expect(props.setHasMoreItems).toHaveBeenLastCalledWith(false);
++    expect(props.setHasMoreItems).toHaveBeenCalledTimes(2);
++
++    await flush();
++    expect(getTrashPaginated).toHaveBeenCalledTimes(4);
++    expect(result.current.isLoadingTrashItems).toBe(false);
++  });
++
++  it('reports a failed mount fetch once without retrying', async () => {
++    const error = new Error('Fetching failed');
++    const props = makeProps({ getTrashPaginated: vi.fn().mockRejectedValue(error) });
++    renderHook(() => useTrashPagination(props));
++
++    await waitFor(() => expect(errorService.reportError).toHaveBeenCalledWith(error));
++    await flush();
++
++    expect(errorService.reportError).toHaveBeenCalledTimes(1);
++    expect(props.getTrashPaginated).toHaveBeenCalledTimes(1);
++  });
++});

@@ -1,0 +1,294 @@
+diff --git a/src/components/document/history/__tests__/DocumentHistoryModal.behavior.test.tsx b/src/components/document/history/__tests__/DocumentHistoryModal.behavior.test.tsx
+new file mode 100644
+index 0000000..b792edc
+--- /dev/null
++++ b/src/components/document/history/__tests__/DocumentHistoryModal.behavior.test.tsx
+@@ -0,0 +1,288 @@
++import { expect } from '@jest/globals';
++import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
++import * as Y from 'yjs';
++
++import { DocumentHistoryModal } from '../DocumentHistoryModal';
++
++type VersionListStubProps = {
++  versions: { versionId: string }[];
++  selectedVersionId: string;
++  onSelect: (versionId: string) => void;
++  onlyShowMine: boolean;
++  onOnlyShowMineChange: (value: boolean) => void;
++  onDateFilterChange: (filter: 'all' | 'last7Days' | 'last30Days' | 'last60Days') => void;
++  onRestoreClicked?: () => void;
++};
++
++let mockEditorDoc: Y.Doc | null = null;
++
++jest.mock('@/components/editor', () => ({
++  Editor: (props: { doc: Y.Doc }) => {
++    mockEditorDoc = props.doc;
++    return <div data-testid='preview-editor'>{props.doc.guid}</div>;
++  },
++}));
++
++jest.mock('@/components/_shared/progress/ComponentLoading', () => () => <div data-testid='preview-loading' />);
++
++jest.mock('../DocumentHistoryVersionList', () => ({
++  VersionList: (props: VersionListStubProps) => (
++    <div>
++      <div data-testid='selected-version'>{props.selectedVersionId}</div>
++      <div data-testid='visible-versions'>{props.versions.map((version) => version.versionId).join(',')}</div>
++      {props.versions.map((version) => (
++        <button key={version.versionId} onClick={() => props.onSelect(version.versionId)}>
++          select {version.versionId}
++        </button>
++      ))}
++      <button onClick={() => props.onOnlyShowMineChange(!props.onlyShowMine)}>toggle only mine</button>
++      <button onClick={() => props.onDateFilterChange('last7Days')}>last 7 days</button>
++      <button onClick={props.onRestoreClicked}>restore</button>
++    </div>
++  ),
++}));
++
++jest.mock('react-i18next', () => ({
++  useTranslation: () => ({ t: (key: string) => key }),
++}));
++
++const mockGetCollabHistory = jest.fn();
++const mockPreviewCollabVersion = jest.fn();
++const mockRevertCollabVersion = jest.fn();
++
++jest.mock('@/components/app/app.hooks', () => ({
++  useAppOperations: () => ({}),
++  useCollabHistory: () => ({
++    getCollabHistory: mockGetCollabHistory,
++    previewCollabVersion: mockPreviewCollabVersion,
++    revertCollabVersion: mockRevertCollabVersion,
++  }),
++  useGetSubscriptions: () => jest.fn(),
++  useCurrentWorkspaceId: () => 'workspace-1',
++  useEventEmitter: () => ({ on: jest.fn(), off: jest.fn() }),
++  useGetMentionUser: () => jest.fn(),
++  useLoadDatabaseRelations: () => jest.fn(),
++}));
++
++jest.mock('@/components/app/hooks/useSubscriptionPlan', () => ({
++  useSubscriptionPlan: () => ({ isPro: false }),
++}));
++
++jest.mock('@/components/main/app.hooks', () => ({
++  useCurrentUser: () => ({ uid: '1' }),
++}));
++
++const DAY = 1000 * 60 * 60 * 24;
++
++const version = (versionId: string, options: { daysAgo?: number; editors?: number[]; deleted?: boolean } = {}) => ({
++  versionId,
++  parentId: null,
++  name: versionId,
++  createdAt: new Date(Date.now() - (options.daysAgo ?? 1) * DAY),
++  deletedAt: options.deleted ? new Date() : null,
++  editors: options.editors ?? [1],
++});
++
++const deferred = <T,>() => {
++  let resolve!: (value: T) => void;
++  const promise = new Promise<T>((res) => {
++    resolve = res;
++  });
++
++  return { promise, resolve };
++};
++
++const previewDocs = new Map<string, Y.Doc>();
++
++const renderModal = (props: { open?: boolean; viewId?: string; onOpenChange?: (value: boolean) => void } = {}) => {
++  const onOpenChange = props.onOpenChange ?? jest.fn();
++  const element = (open: boolean, viewId: string) => (
++    <DocumentHistoryModal open={open} onOpenChange={onOpenChange} viewId={viewId} view={{ name: 'Doc', icon: null }} />
++  );
++  const result = render(element(props.open ?? true, props.viewId ?? 'view-1'));
++
++  return {
++    ...result,
++    onOpenChange,
++    rerenderModal: (open: boolean, viewId: string) => result.rerender(element(open, viewId)),
++  };
++};
++
++const selectedVersion = () => screen.getByTestId('selected-version').textContent;
++
++describe('DocumentHistoryModal behavior', () => {
++  beforeEach(() => {
++    jest.clearAllMocks();
++    mockEditorDoc = null;
++    previewDocs.clear();
++    mockPreviewCollabVersion.mockImplementation(async (viewId: string, versionId: string) => {
++      const doc = new Y.Doc({ guid: `${viewId}:${versionId}` });
++
++      jest.spyOn(doc, 'destroy');
++      previewDocs.set(`${viewId}:${versionId}`, doc);
++      return doc;
++    });
++    mockRevertCollabVersion.mockResolvedValue(undefined);
++  });
++
++  it('loads the history for the view, hides deleted versions and previews the first version', async () => {
++    mockGetCollabHistory.mockResolvedValue([version('v1'), version('v-deleted', { deleted: true }), version('v2')]);
++
++    renderModal();
++
++    expect((await screen.findByTestId('preview-editor')).textContent).toBe('view-1:v1');
++    expect(mockGetCollabHistory).toHaveBeenCalledTimes(1);
++    expect(mockGetCollabHistory).toHaveBeenCalledWith('view-1');
++    expect(screen.getByTestId('visible-versions').textContent).toBe('v1,v2');
++    expect(selectedVersion()).toBe('v1');
++    expect(mockPreviewCollabVersion).toHaveBeenCalledTimes(1);
++    expect(mockPreviewCollabVersion).toHaveBeenCalledWith('view-1', 'v1', expect.anything());
++  });
++
++  it('previews the selected version and reuses cached preview docs', async () => {
++    mockGetCollabHistory.mockResolvedValue([version('v1'), version('v2')]);
++
++    renderModal();
++    await screen.findByText('view-1:v1');
++
++    fireEvent.click(screen.getByText('select v2'));
++    await screen.findByText('view-1:v2');
++    expect(selectedVersion()).toBe('v2');
++
++    fireEvent.click(screen.getByText('select v1'));
++    await screen.findByText('view-1:v1');
++    expect(mockEditorDoc).toBe(previewDocs.get('view-1:v1'));
++    expect(mockPreviewCollabVersion).toHaveBeenCalledTimes(2);
++  });
++
++  it('falls back to the first visible version when the selection is filtered out', async () => {
++    mockGetCollabHistory.mockResolvedValue([
++      version('v1', { daysAgo: 1 }),
++      version('v2', { daysAgo: 2, editors: [2] }),
++      version('v3', { daysAgo: 20 }),
++    ]);
++
++    renderModal();
++    await screen.findByText('view-1:v1');
++
++    fireEvent.click(screen.getByText('select v2'));
++    await screen.findByText('view-1:v2');
++
++    fireEvent.click(screen.getByText('toggle only mine'));
++    expect(screen.getByTestId('visible-versions').textContent).toBe('v1,v3');
++    await waitFor(() => expect(selectedVersion()).toBe('v1'));
++    await screen.findByText('view-1:v1');
++
++    fireEvent.click(screen.getByText('select v3'));
++    await screen.findByText('view-1:v3');
++    fireEvent.click(screen.getByText('last 7 days'));
++    expect(screen.getByTestId('visible-versions').textContent).toBe('v1');
++    await waitFor(() => expect(selectedVersion()).toBe('v1'));
++  });
++
++  it('restores the selected version, refreshes the history and closes the modal', async () => {
++    mockGetCollabHistory.mockResolvedValue([version('v1'), version('v2')]);
++
++    const { onOpenChange } = renderModal();
++
++    await screen.findByText('view-1:v1');
++    fireEvent.click(screen.getByText('select v2'));
++    await screen.findByText('view-1:v2');
++
++    fireEvent.click(screen.getByText('restore'));
++
++    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
++    expect(mockRevertCollabVersion).toHaveBeenCalledTimes(1);
++    expect(mockRevertCollabVersion).toHaveBeenCalledWith('view-1', 'v2');
++    expect(mockGetCollabHistory).toHaveBeenCalledTimes(2);
++  });
++
++  it('shows the error when the history fails to load', async () => {
++    mockGetCollabHistory.mockRejectedValue(new Error('history unavailable'));
++
++    renderModal();
++
++    await screen.findByText('history unavailable');
++    expect(mockPreviewCollabVersion).not.toHaveBeenCalled();
++  });
++
++  it('ignores a stale history response after switching to another view', async () => {
++    const firstRequest = deferred<ReturnType<typeof version>[]>();
++
++    mockGetCollabHistory.mockImplementation((viewId: string) =>
++      viewId === 'view-1' ? firstRequest.promise : Promise.resolve([version('b1'), version('b2')])
++    );
++
++    const { rerenderModal } = renderModal();
++
++    screen.getByTestId('preview-loading');
++    rerenderModal(true, 'view-2');
++
++    await screen.findByText('view-2:b1');
++
++    await act(async () => {
++      firstRequest.resolve([version('a1')]);
++      await firstRequest.promise;
++    });
++
++    expect(screen.getByTestId('visible-versions').textContent).toBe('b1,b2');
++    expect(selectedVersion()).toBe('b1');
++    expect(screen.getByTestId('preview-editor').textContent).toBe('view-2:b1');
++    expect(mockPreviewCollabVersion).not.toHaveBeenCalledWith('view-1', expect.anything(), expect.anything());
++  });
++
++  it('resets the selection and preview when switching views', async () => {
++    mockGetCollabHistory.mockImplementation(async (viewId: string) =>
++      viewId === 'view-1' ? [version('a1'), version('a2')] : [version('b1'), version('b2')]
++    );
++
++    const { rerenderModal } = renderModal();
++
++    await screen.findByText('view-1:a1');
++    fireEvent.click(screen.getByText('select a2'));
++    await screen.findByText('view-1:a2');
++
++    rerenderModal(true, 'view-2');
++
++    await screen.findByText('view-2:b1');
++    expect(selectedVersion()).toBe('b1');
++    expect(mockGetCollabHistory).toHaveBeenLastCalledWith('view-2');
++    expect(previewDocs.get('view-1:a1')?.destroy).toHaveBeenCalled();
++    expect(previewDocs.get('view-1:a2')?.destroy).toHaveBeenCalled();
++  });
++
++  it('destroys cached preview docs when closed and reloads the history when reopened', async () => {
++    mockGetCollabHistory.mockResolvedValue([version('v1'), version('v2')]);
++
++    const { rerenderModal } = renderModal();
++
++    await screen.findByText('view-1:v1');
++    fireEvent.click(screen.getByText('select v2'));
++    await screen.findByText('view-1:v2');
++
++    rerenderModal(false, 'view-1');
++
++    await waitFor(() => {
++      expect(previewDocs.get('view-1:v1')?.destroy).toHaveBeenCalled();
++      expect(previewDocs.get('view-1:v2')?.destroy).toHaveBeenCalled();
++    });
++
++    rerenderModal(true, 'view-1');
++
++    await waitFor(() => expect(mockGetCollabHistory).toHaveBeenCalledTimes(2));
++    await screen.findByText('view-1:v1');
++    expect(selectedVersion()).toBe('v1');
++    expect(mockPreviewCollabVersion).toHaveBeenCalledTimes(3);
++  });
++
++  it('destroys cached preview docs on unmount', async () => {
++    mockGetCollabHistory.mockResolvedValue([version('v1')]);
++
++    const { unmount } = renderModal();
++
++    await screen.findByText('view-1:v1');
++    unmount();
++
++    expect(previewDocs.get('view-1:v1')?.destroy).toHaveBeenCalled();
++  });
++});

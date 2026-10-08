@@ -18,8 +18,6 @@
     "constants.ts",
     "vite.config.ts",
     "playwright.config.ts",
-    "global-setup.ts",
-    "coverage.ts",
     "setup.ts"
   ]
 }

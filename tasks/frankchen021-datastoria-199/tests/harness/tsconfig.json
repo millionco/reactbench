@@ -22,9 +22,6 @@
     "constants.ts",
     "vite.config.ts",
     "playwright.config.ts",
-    "playwright-constants.ts",
-    "setup.ts",
-    "coverage.ts",
-    "global-setup.ts"
+    "setup.ts"
   ]
 }

@@ -3,13 +3,14 @@ new file mode 100644
 index 00000000..c60a8b5b
 --- /dev/null
 +++ b/src/components/core/AnimatedBackgroundImage/AnimatedBackgroundImage.fail2pass.spec.tsx
-@@ -0,0 +1,255 @@
+@@ -0,0 +1,259 @@
 +import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 +import { act, cleanup, render, waitFor } from '@testing-library/react';
 +import { AnimatedBackgroundImage } from './AnimatedBackgroundImage';
 +
 +const IMAGE_SOURCE = 'https://cdn.example.com/partner/background.png';
 +const VIDEO_SOURCE = 'https://cdn.example.com/partner/background.mp4';
++const MEDIA_READINESS_EVENTS = ['loadedmetadata', 'loadeddata', 'canplay', 'canplaythrough'];
 +
 +const stubCanPlayType = (result: CanPlayTypeResult): void => {
 +  vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue(result);
@@ -175,7 +176,7 @@ index 00000000..c60a8b5b
 +
 +  it('renders the image fallback when autoplay rejects', async () => {
 +    stubCanPlayType('probably');
-+    vi.mocked(HTMLMediaElement.prototype.play).mockRejectedValueOnce(
++    vi.mocked(HTMLMediaElement.prototype.play).mockRejectedValue(
 +      new Error('Autoplay blocked'),
 +    );
 +    const { container } = render(
@@ -186,8 +187,11 @@ index 00000000..c60a8b5b
 +    const video = queryBackgroundVideo(container);
 +    expect(video).not.toBeNull();
 +
++    // Any media readiness event may trigger the play() attempt.
 +    await act(async () => {
-+      video?.dispatchEvent(new Event('loadeddata'));
++      for (const readinessEvent of MEDIA_READINESS_EVENTS) {
++        video?.dispatchEvent(new Event(readinessEvent));
++      }
 +      await Promise.resolve();
 +    });
 +

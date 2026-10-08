@@ -1,0 +1,14 @@
+[
+  "file-drop.spec.ts › native browser file drops route to the visible folder",
+  "file-drop.spec.ts › native browser file drops work at the project root and clear the highlight",
+  "specs/file-drop.spec.tsx › project file drops clears the visible target on drag leave",
+  "specs/file-drop.spec.tsx › project file drops does not upload in read-only mode and clears the visible target",
+  "specs/file-drop.spec.tsx › project file drops falls back to item files when entry APIs return no entry",
+  "specs/file-drop.spec.tsx › project file drops ignores non-file drops and clears the visible target",
+  "specs/file-drop.spec.tsx › project file drops places a dropped folder's contents inside the visible destination",
+  "specs/file-drop.spec.tsx › project file drops preserves the complete folder path under uploads",
+  "specs/file-drop.spec.tsx › project file drops shows a useful traversal error and clears the visible target",
+  "specs/file-drop.spec.tsx › project file drops shows an upload error and clears the visible target",
+  "specs/file-drop.spec.tsx › project file drops uploads a nested directory from every reader batch to the root in order",
+  "specs/file-drop.spec.tsx › project file drops uses direct files when the item list is empty and normalizes spaces"
+]

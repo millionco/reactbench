@@ -44,9 +44,12 @@ describe("DatePicker pending range behavior", () => {
   it("exposes and updates the timezone control accessibly", () => {
     const onTimezoneChange = vi.fn();
     const rendered = render(<DatePicker isOpen showTimezoneSelect useLocalTime={false} defaultDates={dates} onTimezoneChange={onTimezoneChange} onChange={vi.fn()} />);
-    const timezone = rendered.getByRole("combobox", { name: "Timezone" });
+    // Any accessible name satisfies the instruction; the control is the combobox offering UTC.
+    const timezone = rendered.getAllByRole("combobox").find((element) => element.querySelector('option[value="utc"]'));
+    expect(timezone).toBeDefined();
+    expect(timezone).toHaveAccessibleName();
     expect(timezone).toHaveValue("utc");
-    fireEvent.change(timezone, { target: { value: "local" } });
+    fireEvent.change(timezone!, { target: { value: "local" } });
     expect(onTimezoneChange).toHaveBeenCalledWith(true);
   });
 });

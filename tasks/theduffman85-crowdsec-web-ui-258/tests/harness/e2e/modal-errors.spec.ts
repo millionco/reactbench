@@ -21,6 +21,8 @@ test("failed add and delete actions stay actionable inside their modals", async 
   await expect(dialog.getByRole("link", { name: "Permission setup guide" })).toBeVisible();
   await expect(dialog.locator('button[type="submit"]')).toBeDisabled();
   await expect(dismissError()).toBeDisabled();
+  await expect.poll(() => page.evaluate(() => typeof (window as Window & { releaseAddRetry?: () => void }).releaseAddRetry)).toBe("function");
+  await page.evaluate(() => (window as Window & { releaseAddRetry?: () => void }).releaseAddRetry?.());
   await expect(dialog.getByRole("alert")).toContainText("Retry permission denied.");
   await expect(dialog.getByRole("link", { name: "Retry permission guide" })).toHaveAttribute("href", "https://example.test/retry-permissions");
   await expect(dismissError()).toBeFocused();

@@ -103,7 +103,7 @@ describe("AI evaluation download loading", () => {
       expect(findLoadingIndicator("completed-evaluation-1")).toBeVisible();
       const row = screen.getByText("completed-evaluation-1").closest("tr");
       if (!row) throw new Error("Missing retried evaluation row");
-      expect(row).toHaveTextContent(/cancel/i);
+      expect(within(row).getByRole("button")).toHaveAccessibleName(/cancel.*completed-evaluation-1/i);
     });
     expect(setErrorMessage).not.toHaveBeenCalled();
     expect(HTMLAnchorElement.prototype.click).not.toHaveBeenCalled();

@@ -1,0 +1,6 @@
+{
+  "private": true,
+  "dependencies": {
+    "react-doctor": "0.9.17"
+  }
+}

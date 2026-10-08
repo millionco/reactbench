@@ -1,0 +1,414 @@
+diff --git a/packages/react-components/src/components/orders/HostedCart.tsx b/packages/react-components/src/components/orders/HostedCart.tsx
+index 0511bff..9ebe254 100644
+--- a/packages/react-components/src/components/orders/HostedCart.tsx
++++ b/packages/react-components/src/components/orders/HostedCart.tsx
+@@ -1,26 +1,33 @@
+-import CommerceLayerContext from '#context/CommerceLayerContext'
+-import OrderContext from '#context/OrderContext'
+-import OrderStorageContext from '#context/OrderStorageContext'
+-import { getApplicationLink } from '#utils/getApplicationLink'
+-import { getDomain } from '#utils/getDomain'
+-import useCustomContext from '#utils/hooks/useCustomContext'
+-import { type CSSProperties, useContext, useEffect, useState, useRef, type JSX } from 'react';
+-import { iframeResizer } from 'iframe-resizer'
+-import type { Order } from '@commercelayer/sdk'
+-import { subscribe, unsubscribe } from '#utils/events'
+-import { getOrganizationConfig } from '#utils/organization'
++import type { Order } from "@commercelayer/sdk"
++import { iframeResizer } from "iframe-resizer"
++import {
++  type CSSProperties,
++  type JSX,
++  useContext,
++  useEffect,
++  useRef,
++  useState,
++} from "react"
++import CommerceLayerContext from "#context/CommerceLayerContext"
++import OrderContext from "#context/OrderContext"
++import OrderStorageContext from "#context/OrderStorageContext"
++import { subscribe, unsubscribe } from "#utils/events"
++import { getApplicationLink } from "#utils/getApplicationLink"
++import { getDomain } from "#utils/getDomain"
++import useCustomContext from "#utils/hooks/useCustomContext"
++import { getOrganizationConfig } from "#utils/organization"
+ 
+ interface IframeData {
+   message:
+     | {
+-        type: 'update'
++        type: "update"
+         payload?: Order
+       }
+     | {
+-        type: 'close'
++        type: "close"
+       }
+     | {
+-        type: 'blur'
++        type: "blur"
+       }
+ }
+ 
+@@ -33,50 +40,50 @@ interface Styles {
+ }
+ 
+ const defaultIframeStyle = {
+-  width: '1px',
+-  minWidth: '100%',
+-  minHeight: '100%',
+-  border: 'none',
+-  paddingLeft: '20px',
+-  paddingRight: '20px'
++  width: "1px",
++  minWidth: "100%",
++  minHeight: "100%",
++  border: "none",
++  paddingLeft: "20px",
++  paddingRight: "20px",
+ } satisfies CSSProperties
+ 
+ const defaultContainerStyle = {
+-  position: 'fixed',
+-  top: '0',
+-  right: '-25rem',
+-  height: '100%',
+-  width: '23rem',
+-  transition: 'right 0.5s ease-in-out',
++  position: "fixed",
++  top: "0",
++  right: "-25rem",
++  height: "100%",
++  width: "23rem",
++  transition: "right 0.5s ease-in-out",
+   // zIndex: '0',
+-  pointerEvents: 'none',
+-  overflow: 'auto'
++  pointerEvents: "none",
++  overflow: "auto",
+ } satisfies CSSProperties
+ 
+ const defaultBackgroundStyle = {
+-  opacity: '0',
+-  position: 'fixed',
+-  top: '0',
+-  left: '0',
+-  height: '100%',
+-  width: '100vw',
+-  transition: 'opacity 0.5s ease-in-out',
++  opacity: "0",
++  position: "fixed",
++  top: "0",
++  left: "0",
++  height: "100%",
++  width: "100vw",
++  transition: "opacity 0.5s ease-in-out",
+   // zIndex: '-10',
+-  pointerEvents: 'none',
+-  backgroundColor: 'black'
++  pointerEvents: "none",
++  backgroundColor: "black",
+ } satisfies CSSProperties
+ 
+ const defaultIconStyle = {
+-  width: '1.25rem',
+-  height: '1.25rem'
++  width: "1.25rem",
++  height: "1.25rem",
+ } satisfies CSSProperties
+ 
+ const defaultIconContainer = {
+-  textAlign: 'left',
+-  paddingLeft: '20px',
+-  paddingTop: '20px',
+-  background: '#ffffff',
+-  color: '#686E6E'
++  textAlign: "left",
++  paddingLeft: "20px",
++  paddingTop: "20px",
++  background: "#ffffff",
++  color: "#686E6E",
+ } satisfies CSSProperties
+ 
+ const defaultStyle = {
+@@ -84,11 +91,11 @@ const defaultStyle = {
+   container: defaultContainerStyle,
+   background: defaultBackgroundStyle,
+   icon: defaultIconStyle,
+-  iconContainer: defaultIconContainer
++  iconContainer: defaultIconContainer,
+ } satisfies Styles
+ 
+ interface Props
+-  extends Omit<JSX.IntrinsicElements['div'], 'children' | 'style'> {
++  extends Omit<JSX.IntrinsicElements["div"], "children" | "style"> {
+   /**
+    * The style of the cart.
+    */
+@@ -100,7 +107,7 @@ interface Props
+   /**
+    * The type of the cart. Defaults to undefined.
+    */
+-  type?: 'mini'
++  type?: "mini"
+   /**
+    * If true, the cart will open when a line item is added to the order clicking the add to cart button. Defaults to false.
+    * Works only with the `type` prop set to `mini`.
+@@ -148,11 +155,12 @@ export function HostedCart({
+ }: Props): JSX.Element | null {
+   const [isOpen, setOpen] = useState(false)
+   const ref = useRef<HTMLIFrameElement>(null)
++  const loadedOrderIdRef = useRef<string | null>(null)
+   const { accessToken, endpoint } = useCustomContext({
+     context: CommerceLayerContext,
+-    contextComponentName: 'CommerceLayer',
+-    currentComponentName: 'HostedCart',
+-    key: 'accessToken'
++    contextComponentName: "CommerceLayer",
++    currentComponentName: "HostedCart",
++    key: "accessToken",
+   })
+   const [src, setSrc] = useState<string | undefined>()
+   if (accessToken == null || endpoint == null) return null
+@@ -166,11 +174,12 @@ export function HostedCart({
+         accessToken,
+         endpoint,
+         params: {
+-          orderId: order?.id,
++          orderId: order?.id ?? orderId,
+           accessToken,
+-          slug
+-        }
++          slug,
++        },
+       })
++      loadedOrderIdRef.current = orderId
+       setSrc(
+         config?.links?.cart ??
+           getApplicationLink({
+@@ -178,9 +187,9 @@ export function HostedCart({
+             orderId,
+             accessToken,
+             domain,
+-            applicationType: 'cart',
+-            customDomain
+-          })
++            applicationType: "cart",
++            customDomain,
++          }),
+       )
+       if (openCart) {
+         setTimeout(() => {
+@@ -192,35 +201,35 @@ export function HostedCart({
+   }
+   function onMessage(data: IframeData): void {
+     switch (data.message.type) {
+-      case 'update':
++      case "update":
+         if (data.message.payload != null) {
+           getOrder(data.message.payload.id)
+         }
+         break
+-      case 'close':
+-        if (type === 'mini') {
++      case "close":
++        if (type === "mini") {
+           if (handleOpen != null) handleOpen()
+           else setOpen(false)
+         }
+         break
+ 
+-      case 'blur':
+-        if (type === 'mini' && isOpen) {
++      case "blur":
++        if (type === "mini" && isOpen) {
+           ref.current?.focus()
+         }
+         break
+     }
+   }
+   useEffect(() => {
+-    const orderId = localStorage.getItem(persistKey)
++    const resolvedOrderId = order?.id ?? localStorage.getItem(persistKey)
+     let ignore = false
+     if (open != null && open !== isOpen) {
+       setOpen(open)
+     }
+-    if (openAdd && type === 'mini') {
+-      subscribe('open-cart', () => {
+-        window.document.body.style.overflow = 'hidden'
+-        if (src == null && order?.id == null && orderId == null) {
++    if (openAdd && type === "mini") {
++      subscribe("open-cart", () => {
++        window.document.body.style.overflow = "hidden"
++        if (src == null && resolvedOrderId == null) {
+           setOrder(true)
+         } else {
+           if (src != null && ref.current != null) {
+@@ -235,36 +244,36 @@ export function HostedCart({
+     }
+     if (
+       src == null &&
+-      order?.id == null &&
+-      orderId == null &&
++      resolvedOrderId == null &&
+       accessToken != null &&
+       !ignore &&
+       isOpen
+     ) {
+       setOrder()
+     } else if (
+-      src == null &&
+-      (order?.id != null || orderId != null) &&
+-      accessToken
++      resolvedOrderId != null &&
++      accessToken &&
++      (src == null || loadedOrderIdRef.current !== resolvedOrderId)
+     ) {
+       getOrganizationConfig({
+         accessToken,
+         endpoint,
+         params: {
+-          orderId: order?.id,
++          orderId: resolvedOrderId,
+           accessToken,
+-          slug
+-        }
++          slug,
++        },
+       }).then((config) => {
++        loadedOrderIdRef.current = resolvedOrderId
+         setSrc(
+           config?.links?.cart ??
+             getApplicationLink({
+               slug,
+-              orderId: order?.id ?? orderId ?? '',
++              orderId: resolvedOrderId,
+               accessToken,
+               domain,
+-              applicationType: 'cart'
+-            })
++              applicationType: "cart",
++            }),
+         )
+       })
+     }
+@@ -273,42 +282,41 @@ export function HostedCart({
+     }
+     return (): void => {
+       ignore = true
+-      if (openAdd && type === 'mini') {
+-        // biome-ignore lint/suspicious/noEmptyBlockStatements: <explanation>
+-        unsubscribe('open-cart', () => {})
++      if (openAdd && type === "mini") {
++        unsubscribe("open-cart", () => {})
+       }
+     }
+-  }, [src, open, order?.id, accessToken])
++  }, [src, open, order?.id, accessToken, persistKey])
+   useEffect(() => {
+     if (ref.current == null) return
+     iframeResizer(
+       {
+         checkOrigin: false,
+         // @ts-expect-error No types available
+-        onMessage
++        onMessage,
+       },
+-      ref.current
++      ref.current,
+     )
+   }, [ref.current != null])
+   /**
+    * Close the cart.
+    */
+   function onCloseCart(): void {
+-    window.document.body.style.removeProperty('overflow')
++    window.document.body.style.removeProperty("overflow")
+     if (handleOpen != null) handleOpen()
+     else setOpen(false)
+   }
+-  return src == null ? null : type === 'mini' ? (
++  return src == null ? null : type === "mini" ? (
+     <>
+       <div
+-        aria-hidden='true'
++        aria-hidden="true"
+         style={{
+           ...defaultStyle.background,
+           ...style?.background,
+-          opacity: isOpen ? '0.5' : defaultStyle.background?.opacity,
++          opacity: isOpen ? "0.5" : defaultStyle.background?.opacity,
+           pointerEvents: isOpen
+-            ? 'initial'
+-            : defaultStyle.background?.pointerEvents
++            ? "initial"
++            : defaultStyle.background?.pointerEvents,
+         }}
+         onClick={onCloseCart}
+       />
+@@ -316,48 +324,48 @@ export function HostedCart({
+         style={{
+           ...defaultStyle.container,
+           ...style?.container,
+-          right: isOpen ? '0' : defaultStyle.container?.right,
++          right: isOpen ? "0" : defaultStyle.container?.right,
+           pointerEvents: isOpen
+-            ? 'initial'
+-            : defaultStyle.container?.pointerEvents
++            ? "initial"
++            : defaultStyle.container?.pointerEvents,
+         }}
+         {...props}
+       >
+         <div style={{ ...defaultStyle.iconContainer, ...style?.iconContainer }}>
+           <svg
+-            xmlns='http://www.w3.org/2000/svg'
+-            fill='none'
+-            viewBox='0 0 24 24'
++            xmlns="http://www.w3.org/2000/svg"
++            fill="none"
++            viewBox="0 0 24 24"
+             strokeWidth={1.5}
+-            stroke='currentColor'
++            stroke="currentColor"
+             style={{ ...defaultStyle.icon, ...style?.icon }}
+             onClick={onCloseCart}
+           >
+             <path
+-              strokeLinecap='round'
+-              strokeLinejoin='round'
+-              d='M6 18L18 6M6 6l12 12'
++              strokeLinecap="round"
++              strokeLinejoin="round"
++              d="M6 18L18 6M6 6l12 12"
+             />
+           </svg>
+         </div>
+         <iframe
+-          title='Cart'
++          title="Cart"
+           ref={ref}
+           style={{ ...defaultStyle.cart, ...style?.cart }}
+           src={src}
+-          width='100%'
+-          height='100%'
++          width="100%"
++          height="100%"
+         />
+       </div>
+     </>
+   ) : (
+     <iframe
+-      title='Cart'
++      title="Cart"
+       ref={ref}
+       style={{ ...defaultStyle.cart, ...style?.cart }}
+       src={src}
+-      width='100%'
+-      height='100%'
++      width="100%"
++      height="100%"
+     />
+   )
+ }
