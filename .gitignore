@@ -4,5 +4,5 @@ node_modules/
 __pycache__/
 *.egg-info/
 .DS_Store
-.env
 .env*
+.vercel/
